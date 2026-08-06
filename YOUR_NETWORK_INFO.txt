@@ -1,0 +1,92 @@
+========================================
+  TESANO CAMPUS SIGN-IN SYSTEM
+  Network Access Information
+========================================
+
+✅ SERVER IS RUNNING!
+
+Your Computer's IP Address: 192.168.110.197
+
+========================================
+  USE THESE URLs ON YOUR DEVICES
+========================================
+
+📺 ENTRANCE DISPLAY (Tablet/Monitor):
+   http://192.168.110.197:3000/
+
+🔒 SECURITY VERIFICATION (Tablet):
+   http://192.168.110.197:3000/security
+
+📊 ADMIN DASHBOARD (Computer):
+   http://192.168.110.197:3000/admin
+
+========================================
+  HOW TO USE
+========================================
+
+1. ENTRANCE DISPLAY:
+   - Open the Entrance URL on a tablet
+   - Press F11 for fullscreen
+   - QR code will automatically show your IP
+   - Students scan this QR code
+
+2. STUDENT PROCESS:
+   - Scan QR code with phone
+   - Fill registration form
+   - Get access token instantly
+   - Show token to security
+
+3. SECURITY VERIFICATION:
+   - Open Security URL on tablet
+   - Enter or scan student's token
+   - Get instant approval/denial
+
+4. ADMIN MONITORING:
+   - Open Admin URL on computer
+   - View real-time statistics
+   - Search students
+   - Monitor today's visitors
+
+========================================
+  IMPORTANT NOTES
+========================================
+
+✅ All devices MUST be on the same WiFi network
+✅ Keep this computer running while system is in use
+✅ QR code now contains your network IP (not localhost)
+✅ Students can scan from their phones on same WiFi
+
+========================================
+  TROUBLESHOOTING
+========================================
+
+If students still can't access after scanning:
+
+1. Check they're on the same WiFi
+2. Check Windows Firewall (see below)
+3. Hard refresh entrance page (Ctrl+F5)
+
+To Allow Through Firewall:
+- Search "Windows Defender Firewall"
+- Click "Allow an app through firewall"
+- Find Node.js → Check "Private"
+- Click OK
+
+========================================
+  TO STOP THE SERVER
+========================================
+
+Press Ctrl+C in the terminal window
+
+========================================
+  TO RESTART THE SERVER
+========================================
+
+Run: npm run dev
+
+========================================
+
+Generated: August 5, 2026
+System Version: 1.0.0
+
+🏛️ Tesano Campus Institute
