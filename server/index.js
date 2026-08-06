@@ -35,6 +35,11 @@ if (!db.campus_qr) {
   console.log('Campus entrance QR code generated:', db.campus_qr);
 }
 
+// Helper function to generate 4-digit token
+function generateShortToken() {
+  return Math.floor(1000 + Math.random() * 9000).toString(); // Generates 1000-9999
+}
+
 // Register new student
 app.post('/api/register', async (req, res) => {
   try {
@@ -133,11 +138,11 @@ app.post('/api/generate-token', async (req, res) => {
     );
 
     if (!tokenData) {
-      // Generate new token
+      // Generate new token - 4 digits
       tokenData = {
         id: uuidv4(),
         student_id: student.id,
-        token: uuidv4(),
+        token: generateShortToken(),
         valid_date: today,
         created_at: new Date().toISOString(),
         used_at: new Date().toISOString()
@@ -187,11 +192,11 @@ app.post('/api/scan-entry', async (req, res) => {
     );
 
     if (!tokenData) {
-      // Generate new token
+      // Generate new token - 4 digits
       tokenData = {
         id: uuidv4(),
         student_id: student.id,
-        token: uuidv4(),
+        token: generateShortToken(),
         valid_date: today,
         created_at: new Date().toISOString(),
         used_at: new Date().toISOString()
