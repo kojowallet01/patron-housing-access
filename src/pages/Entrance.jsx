@@ -1,37 +1,36 @@
-import React, { useState, useEffect } from 'react'
-import { API_URL, CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, DEFAULT_CAMPUS, getSelectedCampus, setSelectedCampus } from '../config'
+import React, { useState, useEffect, useCallback } from 'react'
+import { API_URL, CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, getSelectedCampus, setSelectedCampus } from '../config'
 
 function Entrance() {
   const [selectedCampus, setSelected] = useState(getSelectedCampus())
   const [qrCode, setQrCode] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    fetchQRCode()
-    // Refresh QR code every 30 seconds to keep connection alive
-    const interval = setInterval(fetchQRCode, 30000)
-    return () => clearInterval(interval)
-  }, [])
-
-  const fetchQRCode = async () => {
+  const fetchQRCode = useCallback(async (campus) => {
     try {
-      const response = await fetch(`${API_URL}/campus-qr`)
+      setLoading(true)
+      const response = await fetch(`${API_URL}/campus-qr?campus=${encodeURIComponent(campus)}`)
       const data = await response.json()
-
       setQrCode(data)
     } catch (error) {
       console.error('Error fetching QR code:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchQRCode(selectedCampus)
+    const interval = setInterval(() => fetchQRCode(selectedCampus), 30000)
+    return () => clearInterval(interval)
+  }, [selectedCampus, fetchQRCode])
 
   const handleCampusChange = (campus) => {
     setSelected(campus)
     setSelectedCampus(campus)
   }
 
-  if (loading) {
+  if (loading && !qrCode) {
     return (
       <div className="fullscreen-container">
         <div className="loading">Loading entrance display...</div>
@@ -63,7 +62,7 @@ function Entrance() {
           </div>
         </div>
         <h2>Scan to Get Access Into Building</h2>
-        
+
         <div className="qr-container">
           {qrCode && (
             qrCode.registrationUrl ? (

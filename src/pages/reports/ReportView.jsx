@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { API_URL, ADMIN_TOKEN } from '../../config'
+import { API_URL, getCampusAuthHeaders } from '../../config'
 
 export default function ReportView({ range, title, subtitle }) {
   const [data, setData] = useState(null)
@@ -14,7 +14,7 @@ export default function ReportView({ range, title, subtitle }) {
     try {
       setLoading(true)
       setError(null)
-      const authHeaders = ADMIN_TOKEN ? { 'x-admin-token': ADMIN_TOKEN } : {}
+      const authHeaders = getCampusAuthHeaders('admin')
       const res = await fetch(`${API_URL}/admin/visits?range=${range}`, { headers: authHeaders })
       if (!res.ok) {
         const body = await res.json().catch(() => null)

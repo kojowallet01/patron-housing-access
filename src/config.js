@@ -22,9 +22,6 @@ export const CAMPUS_COLORS = {
 
 export const DEFAULT_CAMPUS = import.meta.env.VITE_CAMPUS || 'TESANO CAMPUS';
 export const CAMPUS_STORAGE_KEY = 'campus-institute-selected-campus';
-export const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || '';
-export const SECURITY_TOKEN = import.meta.env.VITE_SECURITY_TOKEN || '';
-export const SUPER_ADMIN_TOKEN = import.meta.env.VITE_SUPER_ADMIN_TOKEN || '';
 
 export function getSelectedCampus() {
   if (typeof window === 'undefined') return DEFAULT_CAMPUS;
@@ -45,46 +42,15 @@ export function setSelectedCampus(campus) {
   window.localStorage.setItem(CAMPUS_STORAGE_KEY, nextCampus);
 }
 
-const parseTokenMap = (rawValue) => {
-  if (!rawValue) return {};
-
-  try {
-    const parsed = JSON.parse(rawValue);
-    if (parsed && typeof parsed === 'object') {
-      return parsed;
-    }
-  } catch (error) {
-    // ignore and fall back to legacy format
-  }
-
-  const map = {};
-  rawValue.split(',').forEach((entry) => {
-    const [campus, token] = String(entry).split(':');
-    if (campus && token) {
-      map[campus.trim()] = token.trim();
-    }
-  });
-  return map;
-};
-
-export const CAMPUS_ADMIN_TOKENS = parseTokenMap(import.meta.env.VITE_CAMPUS_ADMIN_TOKENS || '');
-export const CAMPUS_SECURITY_TOKENS = parseTokenMap(import.meta.env.VITE_CAMPUS_SECURITY_TOKENS || '');
-
-export function getCampusAuthHeaders(type = 'admin') {
+export function getCampusAuthHeaders() {
   const campus = getSelectedCampus();
   const headers = { 'x-campus': campus };
 
-  if (SUPER_ADMIN_TOKEN) {
-    headers['x-super-admin-token'] = SUPER_ADMIN_TOKEN;
-    return headers;
-  }
-
-  if (type === 'admin') {
-    const token = CAMPUS_ADMIN_TOKENS[campus] || ADMIN_TOKEN;
-    if (token) headers['x-admin-token'] = token;
-  } else {
-    const token = CAMPUS_SECURITY_TOKENS[campus] || SECURITY_TOKEN;
-    if (token) headers['x-security-token'] = token;
+  if (typeof window !== 'undefined') {
+    const sessionToken = window.localStorage.getItem('campus-institute-session');
+    if (sessionToken) {
+      headers['x-session-token'] = sessionToken;
+    }
   }
 
   return headers;
@@ -105,11 +71,6 @@ export const config = {
   DEFAULT_CAMPUS,
   getSelectedCampus,
   setSelectedCampus,
-  ADMIN_TOKEN,
-  SECURITY_TOKEN,
-  SUPER_ADMIN_TOKEN,
-  CAMPUS_ADMIN_TOKENS,
-  CAMPUS_SECURITY_TOKENS,
   getCampusAuthHeaders,
   getBaseURL,
   // Add other configuration as needed

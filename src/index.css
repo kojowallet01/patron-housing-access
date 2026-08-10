@@ -759,6 +759,26 @@ tr:hover {
   opacity: 0.8;
 }
 
+.scan-toggle {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.qr-scanner {
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto 24px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 8px;
+}
+
+.qr-scanner video {
+  border-radius: 8px;
+}
+
 .verify-result {
   max-width: 600px;
   width: 100%;

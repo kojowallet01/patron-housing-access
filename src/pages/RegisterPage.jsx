@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { API_URL } from '../config'
+import { API_URL, CAMPUS_INSTITUTE_NAME, DEFAULT_CAMPUS } from '../config'
 
 function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -9,42 +9,43 @@ function RegisterPage() {
     purposeOther: ''
   })
   const [campusCode, setCampusCode] = useState('')
+  const [campusName, setCampusName] = useState(DEFAULT_CAMPUS)
   const [token, setToken] = useState(null)
   const [error, setError] = useState(null)
   const [statusMessage, setStatusMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [campusQr, setCampusQr] = useState(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const code = params.get('campus')
+    const codeParam = params.get('code')
+    const campusParam = params.get('campus')
 
-    if (!code) {
-      setError('Invalid registration link. Please scan the QR code at the entrance.')
+    if (codeParam) {
+      setCampusCode(codeParam)
+      if (campusParam) {
+        setCampusName(decodeURIComponent(campusParam))
+      }
+      return
     }
 
-    setCampusCode(code)
-    fetchCampusQr()
+    if (campusParam) {
+      setCampusCode(campusParam)
+      return
+    }
+
+    setError('Invalid registration link. Please scan the QR code at the entrance.')
   }, [])
 
-  const fetchCampusQr = async () => {
-    try {
-      const response = await fetch(`${API_URL}/campus-qr`)
-      const data = await response.json()
-      setCampusQr(data)
-    } catch (err) {
-      console.error('Unable to load campus QR code', err)
-    }
-  }
-
-  const requestToken = async () => {
+  const requestToken = async (phone) => {
     const response = await fetch(`${API_URL}/generate-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        phone: formData.phone.trim(),
-        campusCode: campusCode
+        phone: phone.trim(),
+        campusCode,
+        code: campusCode,
+        campus: campusName
       })
     })
 
@@ -65,15 +66,12 @@ function RegisterPage() {
     try {
       const name = formData.name.trim()
       const phone = formData.phone.trim()
-      const purpose = formData.purpose === 'Other' 
-        ? formData.purposeOther.trim() 
+      const purpose = formData.purpose === 'Other'
+        ? formData.purposeOther.trim()
         : formData.purpose
-
-      console.log('Form data:', { name, phone, purpose, formData }) // Debug log
 
       if (!campusCode) {
         setError('Invalid registration link. Please scan the QR code at the entrance.')
-        setLoading(false)
         return
       }
 
@@ -83,17 +81,13 @@ function RegisterPage() {
         if (!phone) missingFields.push('Phone')
         if (!formData.purpose) missingFields.push('Purpose')
         setError(`Please fill in: ${missingFields.join(', ')}`)
-        setLoading(false)
         return
       }
 
       if (formData.purpose === 'Other' && !formData.purposeOther.trim()) {
         setError('Please specify the purpose of your visit.')
-        setLoading(false)
         return
       }
-
-      console.log('Sending registration:', { name, phone, purpose }) // Debug log
 
       const registerResponse = await fetch(`${API_URL}/register`, {
         method: 'POST',
@@ -101,30 +95,28 @@ function RegisterPage() {
         body: JSON.stringify({
           name,
           phone,
-          purpose
+          purpose,
+          campus: campusName
         })
       })
 
       const registerData = await registerResponse.json()
-      
-      console.log('Registration response:', registerData) // Debug log
 
       let tokenData
       if (registerResponse.ok) {
-        tokenData = await requestToken()
-      } else if (registerData.error === 'Phone already registered') {
-        setStatusMessage('Phone already registered. Generating your access token now...')
-        tokenData = await requestToken()
+        tokenData = await requestToken(phone)
+      } else if (registerData.error?.includes('Phone already registered')) {
+        setStatusMessage('Phone already registered for this campus. Generating your access token now...')
+        tokenData = await requestToken(phone)
       } else {
         setError(registerData.error || 'Registration failed')
-        setLoading(false)
         return
       }
 
       setToken(tokenData)
     } catch (err) {
-      console.error('Registration error:', err) // Debug log
       setError(err.message || 'Network error. Please try again.')
+    } finally {
       setLoading(false)
     }
   }
@@ -156,13 +148,14 @@ function RegisterPage() {
       <div className="mobile-container">
         <div className="mobile-header">
           <img src="/logo.png" alt="Patron Housing" className="mobile-logo" />
-          <h1>Patron Housing</h1>
+          <h1>{CAMPUS_INSTITUTE_NAME}</h1>
         </div>
 
         <div className="token-success">
           <div className="success-icon">✅</div>
           <h2>Registration Complete!</h2>
           <p className="welcome-text">Welcome, <strong>{token.student.name}</strong></p>
+          <p className="subtitle">{token.campus || campusName}</p>
 
           <div className="token-qr-box">
             <h3>Your Access Token</h3>
@@ -204,8 +197,8 @@ function RegisterPage() {
     <div className="mobile-container">
       <div className="mobile-header">
         <img src="/logo.png" alt="Patron Housing" className="mobile-logo" />
-        <h1>Patron Housing</h1>
-        <p>Secure Access Management System</p>
+        <h1>{CAMPUS_INSTITUTE_NAME}</h1>
+        <p>{campusName} • Secure Access Management</p>
       </div>
 
       <div className="mobile-content">
@@ -221,20 +214,6 @@ function RegisterPage() {
         {error && (
           <div className="alert alert-error">
             {error}
-          </div>
-        )}
-
-        {campusQr && (
-          <div className="signup-qr-card">
-            <h3>Building Access QR</h3>
-            <img
-              src={campusQr.qrCodeUrl || campusQr.qrCode}
-              alt="Building Access QR"
-              className="signup-qr"
-            />
-            <p>
-              Scan this code at the building entrance or use it from another device to open the registration form.
-            </p>
           </div>
         )}
 
@@ -268,74 +247,28 @@ function RegisterPage() {
           <div className="form-group">
             <label>3. Purpose of Your Visit *</label>
             <p className="field-description">Helps us understand how the building is being used and improve planning for activities.</p>
-            
+
             <div className="radio-group">
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="purpose"
-                  value="Institute Class"
-                  checked={formData.purpose === 'Institute Class'}
-                  onChange={handleChange}
-                  required
-                />
-                <span>Institute Class</span>
-              </label>
-
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="purpose"
-                  value="Personal Study"
-                  checked={formData.purpose === 'Personal Study'}
-                  onChange={handleChange}
-                />
-                <span>Personal Study</span>
-              </label>
-
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="purpose"
-                  value="Meeting"
-                  checked={formData.purpose === 'Meeting'}
-                  onChange={handleChange}
-                />
-                <span>Meeting</span>
-              </label>
-
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="purpose"
-                  value="Social Activity"
-                  checked={formData.purpose === 'Social Activity'}
-                  onChange={handleChange}
-                />
-                <span>Social Activity</span>
-              </label>
-
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="purpose"
-                  value="Office/Administrative Business"
-                  checked={formData.purpose === 'Office/Administrative Business'}
-                  onChange={handleChange}
-                />
-                <span>Office/Administrative Business</span>
-              </label>
-
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="purpose"
-                  value="Other"
-                  checked={formData.purpose === 'Other'}
-                  onChange={handleChange}
-                />
-                <span>Other (please specify)</span>
-              </label>
+              {[
+                'Institute Class',
+                'Personal Study',
+                'Meeting',
+                'Social Activity',
+                'Office/Administrative Business',
+                'Other'
+              ].map((option) => (
+                <label key={option} className="radio-option">
+                  <input
+                    type="radio"
+                    name="purpose"
+                    value={option}
+                    checked={formData.purpose === option}
+                    onChange={handleChange}
+                    required={option === 'Institute Class'}
+                  />
+                  <span>{option === 'Other' ? 'Other (please specify)' : option}</span>
+                </label>
+              ))}
 
               {formData.purpose === 'Other' && (
                 <input

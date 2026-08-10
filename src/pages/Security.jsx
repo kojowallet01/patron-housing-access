@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { Html5QrcodeScanner } from 'html5-qrcode'
 import { API_URL, CAMPUS_INSTITUTE_NAME, getCampusAuthHeaders, getSelectedCampus } from '../config'
 
 function Security() {
@@ -6,9 +7,37 @@ function Security() {
   const [token, setToken] = useState('')
   const [result, setResult] = useState(null)
   const [verifying, setVerifying] = useState(false)
+  const [scanning, setScanning] = useState(false)
 
-  const handleVerify = async () => {
-    if (!token) {
+  useEffect(() => {
+    if (!scanning) return
+
+    const scanner = new Html5QrcodeScanner('security-qr-scanner', {
+      fps: 10,
+      qrbox: { width: 250, height: 250 }
+    }, false)
+
+    scanner.render(
+      (decodedText) => {
+        scanner.clear().catch(() => {})
+        setScanning(false)
+        setToken(decodedText)
+        handleVerify(decodedText)
+      },
+      () => {
+        // Ignore per-frame errors while scanning
+      }
+    )
+
+    return () => {
+      scanner.clear().catch(() => {})
+    }
+  }, [scanning])
+
+  const handleVerify = async (tokenValue) => {
+    const value = (tokenValue !== undefined ? tokenValue : token).trim()
+
+    if (!value) {
       setResult({ valid: false, error: 'Please enter a token' })
       return
     }
@@ -23,7 +52,7 @@ function Security() {
           'Content-Type': 'application/json',
           ...getCampusAuthHeaders('security')
         },
-        body: JSON.stringify({ token: token.trim(), campus })
+        body: JSON.stringify({ token: value, campus })
       })
 
       const data = await response.json()
@@ -80,12 +109,25 @@ function Security() {
               />
               <button 
                 className="btn btn-verify" 
-                onClick={handleVerify}
+                onClick={() => handleVerify()}
                 disabled={verifying || !token}
               >
                 {verifying ? '⏳ Verifying...' : '✓ Verify'}
               </button>
             </div>
+
+            <div className="scan-toggle">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setScanning(s => !s)}
+              >
+                {scanning ? '✕ Stop Scanner' : '📷 Scan QR Code'}
+              </button>
+            </div>
+
+            {scanning && (
+              <div id="security-qr-scanner" className="qr-scanner" />
+            )}
 
             <div className="security-tip">
               <p>💡 You can also use a QR scanner to read the student's token</p>

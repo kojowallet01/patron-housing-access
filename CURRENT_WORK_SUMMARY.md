@@ -4,7 +4,7 @@
 This project now includes the CAMPUS INSTITUTE multi-campus access flow with role-based login and campus-aware access control.
 
 ## Included features
-- Multi-campus branding for: TESANO CAMPUS, TEMA CAMPUS, MADINA CAMPUS, CHRISTIANSBORG CAMPUS
+- Multi-campus branding for: TESANO CAMPUS, CHRISTIANSBORG CAMPUS, ASHIAMAN CAMPUS, LEGON CAMPUS
 - Combined login screen with:
   - role selection
   - campus selection
@@ -15,13 +15,13 @@ This project now includes the CAMPUS INSTITUTE multi-campus access flow with rol
 - Admin/security route protection
 
 ## Key app routes
-- Entrance: http://localhost:3007/
-- Admin: http://localhost:3007/admin
-- Security: http://localhost:3007/security
+- Entrance: http://localhost:3000/
+- Admin: http://localhost:3000/admin
+- Security: http://localhost:3000/security
 
 ## Important notes
 - The app was configured to avoid port conflicts by using the next available local ports in this environment.
-- The backend API is available on http://localhost:3006
+- The backend API is available on http://localhost:3001
 - Real deployment credentials should be set in environment variables before production use.
 
 ## Main files changed

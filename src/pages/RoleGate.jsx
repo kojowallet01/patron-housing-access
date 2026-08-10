@@ -1,12 +1,39 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { API_URL, CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, CAMPUS_COLORS, getSelectedCampus, setSelectedCampus } from '../config'
+import { setSession, validateSession } from '../auth'
 
-function RoleGate({ role, targetPath, title, subtitle, children }) {
+const ALLOWED_ROLES = {
+  admin: ['admin', 'super-admin'],
+  security: ['security', 'super-admin']
+}
+
+function RoleGate({ role, title, subtitle, children }) {
   const [selectedRole, setSelectedRole] = useState(role || 'admin')
   const [selectedCampus, setSelected] = useState(getSelectedCampus())
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [locked, setLocked] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
+  const [unlocked, setUnlocked] = useState(false)
+
+  useEffect(() => {
+    let active = true
+
+    async function checkExistingSession() {
+      const session = await validateSession()
+      if (!active) return
+
+      const allowedRoles = ALLOWED_ROLES[role] || [role]
+      if (session.valid && allowedRoles.includes(session.role)) {
+        setUnlocked(true)
+      }
+      setCheckingSession(false)
+    }
+
+    checkExistingSession()
+    return () => {
+      active = false
+    }
+  }, [role])
 
   const handleCampusSelect = (campus) => {
     setSelected(campus)
@@ -37,23 +64,30 @@ function RoleGate({ role, targetPath, title, subtitle, children }) {
 
       const result = await response.json()
 
-      if (!response.ok || !result.valid) {
+      if (!response.ok || !result.valid || !result.sessionToken) {
         setError('Invalid role or password for the selected campus.')
         return
       }
 
-      window.localStorage.setItem('campus-institute-role', selectedRole)
-      setSelectedCampus(selectedCampus)
-      setLocked(true)
+      setSession(result.sessionToken, result.role, result.campus)
+      setSelectedCampus(result.campus)
+      setUnlocked(true)
       setError('')
-      window.location.href = targetPath
-    } catch (error) {
-      console.error('Login validation failed:', error)
+    } catch (loginError) {
+      console.error('Login validation failed:', loginError)
       setError('Unable to validate login right now. Please try again.')
     }
   }
 
-  if (locked) {
+  if (checkingSession) {
+    return (
+      <div className="fullscreen-container">
+        <div className="loading">Checking access...</div>
+      </div>
+    )
+  }
+
+  if (unlocked) {
     return children
   }
 
@@ -102,9 +136,11 @@ function RoleGate({ role, targetPath, title, subtitle, children }) {
                 className="security-input"
                 style={{ width: '100%' }}
               >
-                <option value="admin">Admin</option>
-                <option value="security">Security</option>
-                <option value="super-admin">Super Admin</option>
+                {(ALLOWED_ROLES[role] || [role]).map((r) => (
+                  <option key={r} value={r}>
+                    {r === 'super-admin' ? 'Super Admin' : r.charAt(0).toUpperCase() + r.slice(1)}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -115,6 +151,7 @@ function RoleGate({ role, targetPath, title, subtitle, children }) {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
                   placeholder={`Enter ${selectedRole.replace('-', ' ')} password for ${selectedCampus}`}
                   className="security-input"
                   style={{ width: '100%' }}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { API_URL, CAMPUS_INSTITUTE_NAME, getCampusAuthHeaders, getSelectedCampus } from '../../config'
+import { validateSession } from '../../auth'
 import ReportLinks from './ReportLinks'
 import RecentActivity from './RecentActivity'
 import StatusCard from './StatusCard'
@@ -20,13 +21,26 @@ function Admin() {
   const [credentialMap, setCredentialMap] = useState({ admin: {}, security: {} })
   const [draftPasswords, setDraftPasswords] = useState({})
   const [credentialMessage, setCredentialMessage] = useState('')
-  const isSuperAdmin = (window.localStorage.getItem('campus-institute-role') || 'admin') === 'super-admin'
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
 
   useEffect(() => {
     fetchData()
     fetchVisitRange('day')
-    if (isSuperAdmin) {
-      fetchPasswordMap()
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    validateSession().then((session) => {
+      if (!active) return
+      if (session.valid && session.isSuperAdmin) {
+        setIsSuperAdmin(true)
+        fetchPasswordMap()
+      }
+    })
+
+    return () => {
+      active = false
     }
   }, [])
 

@@ -27,10 +27,10 @@ Each campus has its own login and access flow, and the selected campus is preser
 - CSV/report style access summaries and campus-specific reporting
 
 ## Key routes
-- Entrance: http://localhost:3007/
-- Admin: http://localhost:3007/admin
-- Security: http://localhost:3007/security
-- Registration: http://localhost:3007/register
+- Entrance: http://localhost:3000/
+- Admin: http://localhost:3000/admin
+- Security: http://localhost:3000/security
+- Registration: http://localhost:3000/register
 
 ## Important implementation notes
 - The app supports campus-aware authentication headers.

@@ -1,4 +1,5 @@
 import React from 'react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Entrance from './pages/Entrance'
 import RegisterPage from './pages/RegisterPage'
 import Security from './pages/Security'
@@ -11,64 +12,66 @@ import WeeklySignups from './pages/reports/WeeklySignups'
 import MonthlySignups from './pages/reports/MonthlySignups'
 
 function App() {
-  const path = window.location.pathname.toLowerCase()
-  const hasRegisterParam = window.location.search.includes('campus=')
-
-  if (path === '/home') {
-    return <Home />
-  }
-
-  if (path === '/register' || hasRegisterParam) {
-    return <RegisterPage />
-  }
-
-  if (path === '/security') {
-    return (
-      <RoleGate
-        role="security"
-        targetPath="/security"
-        title="Security access"
-        subtitle="Unlock this campus security dashboard"
-      >
-        <Security />
-      </RoleGate>
-    )
-  }
-
-  if (path === '/campus-selector') {
-    return <CampusSelector />
-  }
-
-  if (path === '/admin') {
-    return (
-      <RoleGate
-        role="admin"
-        targetPath="/admin"
-        title="Admin access"
-        subtitle="Unlock this campus admin dashboard"
-      >
-        <Admin />
-      </RoleGate>
-    )
-  }
-
-  if (path === '/reports/daily') {
-    return <DailySignups />
-  }
-
-  if (path === '/reports/weekly') {
-    return <WeeklySignups />
-  }
-
-  if (path === '/reports/monthly') {
-    return <MonthlySignups />
-  }
-
-  if (path === '/entrance' || path === '/') {
-    return <Entrance />
-  }
-
-  return <Entrance />
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/home" element={<Home />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route
+          path="/security"
+          element={(
+            <RoleGate
+              role="security"
+              title="Security access"
+              subtitle="Unlock this campus security dashboard"
+            >
+              <Security />
+            </RoleGate>
+          )}
+        />
+        <Route path="/campus-selector" element={<CampusSelector />} />
+        <Route
+          path="/admin"
+          element={(
+            <RoleGate
+              role="admin"
+              title="Admin access"
+              subtitle="Unlock this campus admin dashboard"
+            >
+              <Admin />
+            </RoleGate>
+          )}
+        />
+        <Route
+          path="/reports/daily"
+          element={(
+            <RoleGate role="admin" title="Reports access" subtitle="Unlock admin reports">
+              <DailySignups />
+            </RoleGate>
+          )}
+        />
+        <Route
+          path="/reports/weekly"
+          element={(
+            <RoleGate role="admin" title="Reports access" subtitle="Unlock admin reports">
+              <WeeklySignups />
+            </RoleGate>
+          )}
+        />
+        <Route
+          path="/reports/monthly"
+          element={(
+            <RoleGate role="admin" title="Reports access" subtitle="Unlock admin reports">
+              <MonthlySignups />
+            </RoleGate>
+          )}
+        />
+        <Route path="/entrance" element={<Entrance />} />
+        <Route path="/" element={<Entrance />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  )
 }
 
 export default App

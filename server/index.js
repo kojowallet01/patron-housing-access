@@ -29,6 +29,9 @@ const CAMPUS_TOKEN_STORAGE_KEYS = {
   admin: 'campus_admin_tokens',
   security: 'campus_security_tokens'
 };
+const ALLOW_UNAUTHENTICATED = process.env.ALLOW_UNAUTHENTICATED === 'true';
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const ACCESS_TOKEN_PATTERN = /^[A-Z0-9]{6}$/;
 
 function parseTokenMap(rawValue) {
   if (!rawValue) return {};
@@ -131,7 +134,12 @@ const authLimiter = rateLimit({
   message: { error: 'Too many authentication attempts, please try again later.' }
 });
 
-app.use('/api', apiLimiter);
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/admin') || req.path.startsWith('/super-admin')) {
+    return next();
+  }
+  return apiLimiter(req, res, next);
+});
 app.use('/api/register', authLimiter);
 app.use('/api/verify-token', authLimiter);
 
@@ -183,6 +191,45 @@ try {
   // ignore if index creation fails on older DBs
 }
 
+try {
+  db.prepare('ALTER TABLE access_tokens ADD COLUMN verified_at TEXT').run();
+} catch (error) {
+  // column already exists
+}
+
+db.prepare(`CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  role TEXT NOT NULL,
+  campus TEXT NOT NULL,
+  is_super_admin INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+)`).run();
+
+function migrateStudentsPhoneConstraint() {
+  const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='students'").get();
+  if (!tableInfo?.sql?.includes('phone TEXT NOT NULL UNIQUE')) {
+    return;
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS students_new (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      purpose TEXT NOT NULL,
+      campus TEXT NOT NULL DEFAULT 'TESANO CAMPUS',
+      created_at TEXT NOT NULL,
+      UNIQUE(phone, campus)
+    );
+    INSERT OR IGNORE INTO students_new SELECT id, name, phone, purpose, campus, created_at FROM students;
+    DROP TABLE students;
+    ALTER TABLE students_new RENAME TO students;
+  `);
+}
+
+migrateStudentsPhoneConstraint();
+
 function getSetting(key) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
   return row ? row.value : null;
@@ -192,8 +239,61 @@ function setSetting(key, value) {
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
 }
 
-function generateShortToken() {
-  return Math.floor(1000 + Math.random() * 9000).toString();
+function generateAccessToken() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let token = '';
+  for (let i = 0; i < 6; i += 1) {
+    token += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return token;
+}
+
+function createSession(role, campus, isSuperAdmin = false) {
+  const session = {
+    id: uuidv4(),
+    role,
+    campus: resolveCampusName(campus),
+    is_super_admin: isSuperAdmin ? 1 : 0,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + SESSION_TTL_MS).toISOString()
+  };
+
+  db.prepare(`INSERT INTO sessions (id, role, campus, is_super_admin, created_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(session.id, session.role, session.campus, session.is_super_admin, session.created_at, session.expires_at);
+
+  return session;
+}
+
+function resolveSession(req) {
+  const sessionToken = req.get('x-session-token');
+  if (!sessionToken) {
+    return null;
+  }
+
+  return db.prepare('SELECT * FROM sessions WHERE id = ? AND expires_at > ?')
+    .get(sessionToken, new Date().toISOString()) || null;
+}
+
+function deleteSession(sessionToken) {
+  if (!sessionToken) return;
+  db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionToken);
+}
+
+function hasConfiguredAdminAuth(campus) {
+  return Boolean(
+    SUPER_ADMIN_TOKEN ||
+    ADMIN_TOKEN ||
+    getCampusRoleToken(campus, 'admin')
+  );
+}
+
+function hasConfiguredSecurityAuth(campus) {
+  return Boolean(
+    SUPER_ADMIN_TOKEN ||
+    SECURITY_TOKEN ||
+    getCampusRoleToken(campus, 'security')
+  );
 }
 
 function validatePhone(phone) {
@@ -201,16 +301,22 @@ function validatePhone(phone) {
 }
 
 function requireAdminAuth(req, res, next) {
-  const token = req.get('x-admin-token') || req.get('x-super-admin-token') || '';
   const campus = resolveCampusName(req.get('x-campus') || req.body?.campus || req.query?.campus || DEFAULT_CAMPUS);
+  const session = resolveSession(req);
 
+  if (session) {
+    if (session.role === 'admin' || session.role === 'super-admin' || session.is_super_admin) {
+      req.userCampus = session.is_super_admin ? campus : session.campus;
+      req.isSuperAdmin = session.role === 'super-admin' || Boolean(session.is_super_admin);
+      return next();
+    }
+    return res.status(401).json({ error: 'Admin authentication required' });
+  }
+
+  const token = req.get('x-admin-token') || req.get('x-super-admin-token') || '';
   const campusAdminToken = getCampusRoleToken(campus, 'admin');
   const superAdminMatches = SUPER_ADMIN_TOKEN && isMatchingToken(token, SUPER_ADMIN_TOKEN);
   const campusAdminMatches = campusAdminToken && isMatchingToken(token, campusAdminToken);
-
-  if (!SUPER_ADMIN_TOKEN && !campusAdminToken && !ADMIN_TOKEN) {
-    return next();
-  }
 
   if (superAdminMatches || campusAdminMatches) {
     req.userCampus = campus;
@@ -218,25 +324,51 @@ function requireAdminAuth(req, res, next) {
     return next();
   }
 
+  if (ALLOW_UNAUTHENTICATED) {
+    req.userCampus = campus;
+    req.isSuperAdmin = false;
+    return next();
+  }
+
+  if (!hasConfiguredAdminAuth(campus)) {
+    return res.status(503).json({ error: 'Admin authentication is not configured.' });
+  }
+
   return res.status(401).json({ error: 'Admin authentication required' });
 }
 
 function requireSecurityAuth(req, res, next) {
-  const token = req.get('x-security-token') || req.get('x-super-admin-token') || '';
   const campus = resolveCampusName(req.get('x-campus') || req.body?.campus || req.query?.campus || DEFAULT_CAMPUS);
+  const session = resolveSession(req);
 
+  if (session) {
+    if (session.role === 'security' || session.role === 'super-admin' || session.is_super_admin) {
+      req.userCampus = session.is_super_admin ? campus : session.campus;
+      req.isSuperAdmin = session.role === 'super-admin' || Boolean(session.is_super_admin);
+      return next();
+    }
+    return res.status(401).json({ error: 'Security authentication required' });
+  }
+
+  const token = req.get('x-security-token') || req.get('x-super-admin-token') || '';
   const campusSecurityToken = getCampusRoleToken(campus, 'security');
   const superAdminMatches = SUPER_ADMIN_TOKEN && isMatchingToken(token, SUPER_ADMIN_TOKEN);
   const campusSecurityMatches = campusSecurityToken && isMatchingToken(token, campusSecurityToken);
-
-  if (!SUPER_ADMIN_TOKEN && !campusSecurityToken && !SECURITY_TOKEN) {
-    return next();
-  }
 
   if (superAdminMatches || campusSecurityMatches) {
     req.userCampus = campus;
     req.isSuperAdmin = superAdminMatches;
     return next();
+  }
+
+  if (ALLOW_UNAUTHENTICATED) {
+    req.userCampus = campus;
+    req.isSuperAdmin = false;
+    return next();
+  }
+
+  if (!hasConfiguredSecurityAuth(campus)) {
+    return res.status(503).json({ error: 'Security authentication is not configured.' });
   }
 
   return res.status(401).json({ error: 'Security authentication required' });
@@ -267,17 +399,39 @@ function getPeriodRange(range) {
   return { start: today, end: today };
 }
 
-function ensureCampusQr() {
-  let campusQr = getSetting('campus_qr');
-  if (!campusQr) {
-    campusQr = uuidv4();
-    setSetting('campus_qr', campusQr);
-    console.log('Campus entrance QR code generated:', campusQr);
+function ensureCampusQr(campusName = DEFAULT_CAMPUS) {
+  const normalizedCampus = resolveCampusName(campusName);
+  const settingKey = `campus_qr_${normalizedCampus.replace(/\s+/g, '_').toUpperCase()}`;
+  let campusCode = getSetting(settingKey);
+
+  if (!campusCode) {
+    campusCode = uuidv4();
+    setSetting(settingKey, campusCode);
+    console.log(`Campus entrance QR code generated for ${normalizedCampus}:`, campusCode);
   }
-  return campusQr;
+
+  return { campusCode, campusName: normalizedCampus, settingKey };
 }
 
-const campusQr = ensureCampusQr();
+function resolveCampusFromCode(campusCode) {
+  if (!campusCode) {
+    return null;
+  }
+
+  for (const campusName of SUB_CAMPUSES) {
+    const { campusCode: expectedCode } = ensureCampusQr(campusName);
+    if (expectedCode === campusCode) {
+      return campusName;
+    }
+  }
+
+  const legacyCode = getSetting('campus_qr');
+  if (legacyCode && legacyCode === campusCode) {
+    return DEFAULT_CAMPUS;
+  }
+
+  return null;
+}
 
 // Supabase client (optional) - use if SUPABASE_URL and SUPABASE_SERVICE_KEY are provided
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
@@ -309,28 +463,42 @@ function createTokenForStudent(studentId, campusName = DEFAULT_CAMPUS) {
     return tokenData;
   }
 
-  let token = generateShortToken();
+  let token = generateAccessToken();
   let collisionCount = 0;
   while (db.prepare('SELECT 1 FROM access_tokens WHERE token = ? AND valid_date = ?').get(token, today) && collisionCount < 10) {
-    token = generateShortToken();
+    token = generateAccessToken();
     collisionCount += 1;
   }
 
+  const createdAt = new Date().toISOString();
   tokenData = {
     id: uuidv4(),
     student_id: studentId,
     campus: campusName,
     token,
     valid_date: today,
-    created_at: new Date().toISOString(),
-    used_at: new Date().toISOString()
+    created_at: createdAt,
+    used_at: createdAt,
+    verified_at: null
   };
 
-  db.prepare(`INSERT INTO access_tokens (id, student_id, campus, token, valid_date, created_at, used_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(tokenData.id, tokenData.student_id, tokenData.campus, tokenData.token, tokenData.valid_date, tokenData.created_at, tokenData.used_at);
+  db.prepare(`INSERT INTO access_tokens (id, student_id, campus, token, valid_date, created_at, used_at, verified_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(tokenData.id, tokenData.student_id, tokenData.campus, tokenData.token, tokenData.valid_date, tokenData.created_at, tokenData.used_at, tokenData.verified_at);
 
   return tokenData;
+}
+
+async function buildTokenResponse(tokenData, student) {
+  const tokenQR = await QRCode.toDataURL(tokenData.token);
+  return {
+    success: true,
+    student: { name: student.name, phone: student.phone, campus: student.campus },
+    token: tokenData.token,
+    tokenQR,
+    validDate: tokenData.valid_date,
+    campus: student.campus
+  };
 }
 
 app.get('/api', (req, res) => {
@@ -367,9 +535,9 @@ app.post('/api/register', (req, res) => {
       return res.status(400).json({ error: 'Purpose is required' });
     }
 
-    const existing = db.prepare('SELECT * FROM students WHERE phone = ?').get(phone.trim());
+    const existing = db.prepare('SELECT * FROM students WHERE phone = ? AND campus = ?').get(phone.trim(), campusName);
     if (existing) {
-      return res.status(400).json({ error: 'Phone already registered' });
+      return res.status(400).json({ error: 'Phone already registered for this campus' });
     }
 
     const student = {
@@ -394,15 +562,17 @@ app.post('/api/register', (req, res) => {
 
 app.get('/api/campus-qr', async (req, res) => {
   try {
-    const registrationUrl = `${buildBaseUrl(req)}/register?campus=${campusQr}`;
+    const campusName = resolveCampusName(req.query.campus || DEFAULT_CAMPUS);
+    const { campusCode } = ensureCampusQr(campusName);
+    const registrationUrl = `${buildBaseUrl(req)}/register?code=${campusCode}&campus=${encodeURIComponent(campusName)}`;
     const customImagePath = path.join(process.cwd(), 'public', 'custom-campus-qr.png');
     try {
       await fs.access(customImagePath);
       const imageUrl = `${buildBaseUrl(req)}/custom-campus-qr.png`;
-      return res.json({ qrCodeUrl: imageUrl, code: campusQr, registrationUrl });
+      return res.json({ qrCodeUrl: imageUrl, code: campusCode, campus: campusName, registrationUrl });
     } catch {
       const qrDataURL = await QRCode.toDataURL(registrationUrl);
-      return res.json({ qrCodeUrl: qrDataURL, code: campusQr, registrationUrl });
+      return res.json({ qrCodeUrl: qrDataURL, code: campusCode, campus: campusName, registrationUrl });
     }
   } catch (error) {
     console.error('QR generation error:', error);
@@ -410,15 +580,20 @@ app.get('/api/campus-qr', async (req, res) => {
   }
 });
 
-app.post('/api/generate-token', (req, res) => {
+app.post('/api/generate-token', async (req, res) => {
   try {
-    const { phone, campusCode, campus } = req.body;
-    const campusName = resolveCampusName(campus || DEFAULT_CAMPUS);
+    const { phone, campusCode, code, campus } = req.body;
+    const providedCode = campusCode || code;
+    const campusName = resolveCampusName(campus || resolveCampusFromCode(providedCode) || DEFAULT_CAMPUS);
     if (!phone || !validatePhone(phone)) {
       return res.status(400).json({ error: 'Valid phone number is required' });
     }
-    if (campusCode && campusCode !== campusQr) {
-      return res.status(400).json({ error: 'Invalid campus code' });
+    if (providedCode) {
+      const { campusCode: expectedCode } = ensureCampusQr(campusName);
+      const legacyCode = getSetting('campus_qr');
+      if (providedCode !== expectedCode && providedCode !== legacyCode) {
+        return res.status(400).json({ error: 'Invalid campus code' });
+      }
     }
 
     const student = db.prepare('SELECT * FROM students WHERE phone = ? AND campus = ?').get(phone.trim(), campusName);
@@ -427,31 +602,26 @@ app.post('/api/generate-token', (req, res) => {
     }
 
     const tokenData = createTokenForStudent(student.id, campusName);
-    const tokenQR = QRCode.toDataURL(tokenData.token);
-
-    res.json({
-      success: true,
-      student: { name: student.name, phone: student.phone, campus: student.campus },
-      token: tokenData.token,
-      tokenQR,
-      validDate: tokenData.valid_date,
-      campus: student.campus
-    });
+    res.json(await buildTokenResponse(tokenData, student));
   } catch (error) {
     console.error('Token generation error:', error);
     res.status(500).json({ error: 'Failed to generate access token' });
   }
 });
 
-app.post('/api/scan-entry', (req, res) => {
+app.post('/api/scan-entry', async (req, res) => {
   try {
     const { qrCode, phone, campus } = req.body;
-    const campusName = resolveCampusName(campus || DEFAULT_CAMPUS);
+    const campusName = resolveCampusName(campus || resolveCampusFromCode(qrCode) || DEFAULT_CAMPUS);
     if (!phone || !validatePhone(phone)) {
       return res.status(400).json({ error: 'Valid phone number is required' });
     }
-    if (qrCode !== campusQr) {
-      return res.status(400).json({ error: 'Invalid QR code' });
+    if (qrCode) {
+      const { campusCode: expectedCode } = ensureCampusQr(campusName);
+      const legacyCode = getSetting('campus_qr');
+      if (qrCode !== expectedCode && qrCode !== legacyCode) {
+        return res.status(400).json({ error: 'Invalid QR code' });
+      }
     }
 
     const student = db.prepare('SELECT * FROM students WHERE phone = ? AND campus = ?').get(phone.trim(), campusName);
@@ -460,16 +630,7 @@ app.post('/api/scan-entry', (req, res) => {
     }
 
     const tokenData = createTokenForStudent(student.id, campusName);
-    const tokenQR = QRCode.toDataURL(tokenData.token);
-
-    res.json({
-      success: true,
-      student: { name: student.name, phone: student.phone, campus: student.campus },
-      token: tokenData.token,
-      tokenQR,
-      validDate: tokenData.valid_date,
-      campus: student.campus
-    });
+    res.json(await buildTokenResponse(tokenData, student));
   } catch (error) {
     console.error('Scan error:', error);
     res.status(500).json({ error: 'Failed to generate access token' });
@@ -480,15 +641,20 @@ app.post('/api/verify-token', requireSecurityAuth, (req, res) => {
   try {
     const { token, campus } = req.body;
     const campusName = resolveCampusName(campus || req.userCampus || DEFAULT_CAMPUS);
-    if (!token || typeof token !== 'string' || !/^\d{4}$/.test(token.trim())) {
-      return res.status(400).json({ valid: false, error: 'Token must be a 4-digit number' });
+    const normalizedToken = String(token || '').trim().toUpperCase();
+    if (!ACCESS_TOKEN_PATTERN.test(normalizedToken)) {
+      return res.status(400).json({ valid: false, error: 'Token must be a 6-character code' });
     }
 
     const today = currentDateString();
-    const tokenData = db.prepare('SELECT * FROM access_tokens WHERE token = ? AND campus = ? AND valid_date = ?').get(token.trim(), campusName, today);
+    const tokenData = db.prepare('SELECT * FROM access_tokens WHERE token = ? AND campus = ? AND valid_date = ?').get(normalizedToken, campusName, today);
     if (!tokenData) {
       return res.status(400).json({ valid: false, error: 'Invalid or expired token for this campus' });
     }
+
+    const verifiedAt = new Date().toISOString();
+    db.prepare('UPDATE access_tokens SET verified_at = ?, used_at = ? WHERE id = ?')
+      .run(verifiedAt, verifiedAt, tokenData.id);
 
     const student = db.prepare('SELECT * FROM students WHERE id = ?').get(tokenData.student_id);
     res.json({
@@ -500,7 +666,8 @@ app.post('/api/verify-token', requireSecurityAuth, (req, res) => {
         campus: student.campus
       },
       validDate: tokenData.valid_date,
-      campus: tokenData.campus
+      campus: tokenData.campus,
+      verifiedAt
     });
   } catch (error) {
     console.error('Verification error:', error);
@@ -525,7 +692,18 @@ app.post('/api/validate-login', (req, res) => {
 
     if (selectedRole === 'super-admin') {
       const isValid = Boolean(SUPER_ADMIN_TOKEN) && isMatchingToken(passwordValue, SUPER_ADMIN_TOKEN);
-      return res.json({ valid: isValid, role: 'super-admin', campus: selectedCampus });
+      if (!isValid) {
+        return res.json({ valid: false, role: 'super-admin', campus: selectedCampus });
+      }
+
+      const session = createSession('super-admin', selectedCampus, true);
+      return res.json({
+        valid: true,
+        role: 'super-admin',
+        campus: selectedCampus,
+        sessionToken: session.id,
+        expiresAt: session.expires_at
+      });
     }
 
     const expected = selectedRole === 'admin'
@@ -533,11 +711,42 @@ app.post('/api/validate-login', (req, res) => {
       : getCampusRoleToken(selectedCampus, 'security') || SECURITY_TOKEN;
 
     const isValid = Boolean(expected) && isMatchingToken(passwordValue, expected);
-    return res.json({ valid: isValid, role: selectedRole, campus: selectedCampus });
+    if (!isValid) {
+      return res.json({ valid: false, role: selectedRole, campus: selectedCampus });
+    }
+
+    const session = createSession(selectedRole, selectedCampus, false);
+    return res.json({
+      valid: true,
+      role: selectedRole,
+      campus: selectedCampus,
+      sessionToken: session.id,
+      expiresAt: session.expires_at
+    });
   } catch (error) {
     console.error('Password validation error:', error);
     return res.status(500).json({ valid: false, error: 'Validation failed.' });
   }
+});
+
+app.get('/api/session', (req, res) => {
+  const session = resolveSession(req);
+  if (!session) {
+    return res.status(401).json({ valid: false, error: 'Session expired or invalid.' });
+  }
+
+  return res.json({
+    valid: true,
+    role: session.role,
+    campus: session.campus,
+    isSuperAdmin: Boolean(session.is_super_admin),
+    expiresAt: session.expires_at
+  });
+});
+
+app.post('/api/logout', (req, res) => {
+  deleteSession(req.get('x-session-token'));
+  res.json({ success: true });
 });
 
 app.get('/api/super-admin/passwords', requireAdminAuth, (req, res) => {
@@ -592,7 +801,7 @@ app.get('/api/admin/today', requireAdminAuth, (req, res) => {
     const today = currentDateString();
     const campusFilter = req.isSuperAdmin ? '' : 'AND t.campus = ?';
     const params = req.isSuperAdmin ? [today] : [today, req.userCampus];
-    const todayTokens = db.prepare(`SELECT t.* FROM access_tokens t WHERE t.valid_date = ? ${campusFilter}`).all(...params);
+    const todayTokens = db.prepare(`SELECT t.* FROM access_tokens t WHERE t.verified_at IS NOT NULL AND date(t.verified_at) = ? ${campusFilter}`).all(...params);
     const students = todayTokens.map(token => {
       const student = db.prepare('SELECT * FROM students WHERE id = ?').get(token.student_id);
       return {
@@ -628,15 +837,23 @@ app.get('/api/admin/stats', requireAdminAuth, (req, res) => {
     const totalQuery = req.isSuperAdmin ? 'SELECT COUNT(*) as count FROM students' : 'SELECT COUNT(*) as count FROM students WHERE campus = ?';
     const totalStudents = db.prepare(totalQuery).get(...(req.isSuperAdmin ? [] : [req.userCampus])).count;
     const today = currentDateString();
-    const todayVisitsQuery = req.isSuperAdmin ? 'SELECT COUNT(*) as count FROM access_tokens WHERE date(used_at) = ?' : 'SELECT COUNT(*) as count FROM access_tokens WHERE campus = ? AND date(used_at) = ?';
+    const todayVisitsQuery = req.isSuperAdmin
+      ? 'SELECT COUNT(*) as count FROM access_tokens WHERE verified_at IS NOT NULL AND date(verified_at) = ?'
+      : 'SELECT COUNT(*) as count FROM access_tokens WHERE campus = ? AND verified_at IS NOT NULL AND date(verified_at) = ?';
     const todayVisits = db.prepare(todayVisitsQuery).get(...(req.isSuperAdmin ? [today] : [req.userCampus, today])).count;
     const thisWeek = getPeriodRange('week');
     const thisMonth = getPeriodRange('month');
-    const thisWeekVisitsQuery = req.isSuperAdmin ? 'SELECT COUNT(*) as count FROM access_tokens WHERE date(used_at) BETWEEN ? AND ?' : 'SELECT COUNT(*) as count FROM access_tokens WHERE campus = ? AND date(used_at) BETWEEN ? AND ?';
-    const thisMonthVisitsQuery = req.isSuperAdmin ? 'SELECT COUNT(*) as count FROM access_tokens WHERE date(used_at) BETWEEN ? AND ?' : 'SELECT COUNT(*) as count FROM access_tokens WHERE campus = ? AND date(used_at) BETWEEN ? AND ?';
+    const thisWeekVisitsQuery = req.isSuperAdmin
+      ? 'SELECT COUNT(*) as count FROM access_tokens WHERE verified_at IS NOT NULL AND date(verified_at) BETWEEN ? AND ?'
+      : 'SELECT COUNT(*) as count FROM access_tokens WHERE campus = ? AND verified_at IS NOT NULL AND date(verified_at) BETWEEN ? AND ?';
+    const thisMonthVisitsQuery = req.isSuperAdmin
+      ? 'SELECT COUNT(*) as count FROM access_tokens WHERE verified_at IS NOT NULL AND date(verified_at) BETWEEN ? AND ?'
+      : 'SELECT COUNT(*) as count FROM access_tokens WHERE campus = ? AND verified_at IS NOT NULL AND date(verified_at) BETWEEN ? AND ?';
     const thisWeekVisits = db.prepare(thisWeekVisitsQuery).get(...(req.isSuperAdmin ? [thisWeek.start, thisWeek.end] : [req.userCampus, thisWeek.start, thisWeek.end])).count;
     const thisMonthVisits = db.prepare(thisMonthVisitsQuery).get(...(req.isSuperAdmin ? [thisMonth.start, thisMonth.end] : [req.userCampus, thisMonth.start, thisMonth.end])).count;
-    const totalVisitsQuery = req.isSuperAdmin ? 'SELECT COUNT(*) as count FROM access_tokens' : 'SELECT COUNT(*) as count FROM access_tokens WHERE campus = ?';
+    const totalVisitsQuery = req.isSuperAdmin
+      ? 'SELECT COUNT(*) as count FROM access_tokens WHERE verified_at IS NOT NULL'
+      : 'SELECT COUNT(*) as count FROM access_tokens WHERE campus = ? AND verified_at IS NOT NULL';
     const totalVisits = db.prepare(totalVisitsQuery).get(...(req.isSuperAdmin ? [] : [req.userCampus])).count;
     res.json({ totalStudents, todayVisits, thisWeekVisits, thisMonthVisits, totalVisits });
   } catch (error) {
@@ -708,8 +925,8 @@ app.get('/api/admin/visits', requireAdminAuth, async (req, res) => {
       `SELECT t.*, s.name, s.phone, s.purpose
        FROM access_tokens t
        JOIN students s ON t.student_id = s.id
-       WHERE date(t.used_at) BETWEEN ? AND ? ${campusClause}
-       ORDER BY t.used_at DESC`
+       WHERE t.verified_at IS NOT NULL AND date(t.verified_at) BETWEEN ? AND ? ${campusClause}
+       ORDER BY t.verified_at DESC`
     ).all(...params);
 
     const students = visitors.map(v => ({
