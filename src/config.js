@@ -3,7 +3,7 @@
 
 export const API_URL = import.meta.env.PROD
   ? '/api'  // Production: uses proxy or same origin
-  : 'http://localhost:3001/api';
+  : `${window.location.protocol}//${window.location.hostname}:3001/api`;
 
 export const CAMPUS_INSTITUTE_NAME = 'CAMPUS INSTITUTE';
 export const CAMPUS_LIST = [
