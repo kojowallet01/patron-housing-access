@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { API_URL } from '../config'
 
 function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -29,7 +30,7 @@ function RegisterPage() {
 
   const fetchCampusQr = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/campus-qr')
+      const response = await fetch(`${API_URL}/campus-qr`)
       const data = await response.json()
       setCampusQr(data)
     } catch (err) {
@@ -38,7 +39,7 @@ function RegisterPage() {
   }
 
   const requestToken = async () => {
-    const response = await fetch('http://localhost:3001/api/generate-token', {
+    const response = await fetch(`${API_URL}/generate-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -70,6 +71,12 @@ function RegisterPage() {
 
       console.log('Form data:', { name, phone, purpose, formData }) // Debug log
 
+      if (!campusCode) {
+        setError('Invalid registration link. Please scan the QR code at the entrance.')
+        setLoading(false)
+        return
+      }
+
       if (!name || !phone || !formData.purpose) {
         const missingFields = []
         if (!name) missingFields.push('Name')
@@ -88,7 +95,7 @@ function RegisterPage() {
 
       console.log('Sending registration:', { name, phone, purpose }) // Debug log
 
-      const registerResponse = await fetch('http://localhost:3001/api/register', {
+      const registerResponse = await fetch(`${API_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

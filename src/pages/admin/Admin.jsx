@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react'
+import { API_URL, CAMPUS_INSTITUTE_NAME, getCampusAuthHeaders, getSelectedCampus } from '../../config'
+import ReportLinks from './ReportLinks'
+import RecentActivity from './RecentActivity'
+import StatusCard from './StatusCard'
 
 function Admin() {
+  const campus = getSelectedCampus()
   const [stats, setStats] = useState(null)
   const [todayVisitors, setTodayVisitors] = useState([])
   const [allStudents, setAllStudents] = useState([])
@@ -8,20 +13,31 @@ function Admin() {
   const [view, setView] = useState('today')
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [visitsRange, setVisitsRange] = useState('day')
+  const [rangeVisitors, setRangeVisitors] = useState([])
+  const [rangeInfo, setRangeInfo] = useState(null)
+  const [rangeLoading, setRangeLoading] = useState(false)
 
   useEffect(() => {
     fetchData()
-    // Refresh data every 5 seconds for real-time updates
-    const interval = setInterval(fetchData, 5000)
-    return () => clearInterval(interval)
+    fetchVisitRange('day')
   }, [])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchData()
+      fetchVisitRange(visitsRange)
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [visitsRange])
 
   const fetchData = async () => {
     try {
+      const authHeaders = getCampusAuthHeaders('admin')
       const [statsRes, todayRes, studentsRes] = await Promise.all([
-        fetch('http://localhost:3001/api/admin/stats'),
-        fetch('http://localhost:3001/api/admin/today'),
-        fetch('http://localhost:3001/api/admin/students')
+        fetch(`${API_URL}/admin/stats`, { headers: authHeaders }),
+        fetch(`${API_URL}/admin/today`, { headers: authHeaders }),
+        fetch(`${API_URL}/admin/students`, { headers: authHeaders })
       ])
 
       const statsData = await statsRes.json()
@@ -46,17 +62,33 @@ function Admin() {
     }
   }
 
+  const fetchVisitRange = async (range = 'day') => {
+    try {
+      setRangeLoading(true)
+      const authHeaders = getCampusAuthHeaders('admin')
+      const visitsRes = await fetch(`${API_URL}/admin/visits?range=${range}&campus=${encodeURIComponent(campus)}`, { headers: authHeaders })
+      const visitsData = await visitsRes.json()
+      setRangeVisitors(visitsData.students || [])
+      setRangeInfo(visitsData)
+      setVisitsRange(range)
+    } catch (error) {
+      console.error('Error fetching visit range:', error)
+    } finally {
+      setRangeLoading(false)
+    }
+  }
+
   const filteredVisitors = todayVisitors.filter(v => 
     v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.email.toLowerCase().includes(searchTerm.toLowerCase())
+    (v.phone || '').toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const filteredStudents = allStudents.filter(s =>
     s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.email.toLowerCase().includes(searchTerm.toLowerCase())
+    (s.phone || '').toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  if (loading) {
+  if (loading || !stats) {
     return (
       <div className="fullscreen-container">
         <div className="loading">Loading dashboard...</div>
@@ -71,10 +103,13 @@ function Admin() {
           <img src="/logo.png" alt="Patron Housing" className="admin-logo" />
           <div>
             <h1>Admin Dashboard</h1>
-            <p>Patron Housing</p>
+            <p>{CAMPUS_INSTITUTE_NAME} • {campus}</p>
           </div>
         </div>
         <div className="header-actions">
+          <button className="btn btn-secondary" onClick={() => window.location.href = '/campus-selector'}>
+            Switch Campus
+          </button>
           <div className="live-indicator">
             <span className="pulse-dot"></span>
             <span>Live</span>
@@ -97,7 +132,15 @@ function Admin() {
                 <div className="stat-value">{stats.todayVisits}</div>
                 <div className="stat-label">Today's Visits</div>
               </div>
+              <div className="stat-card stat-warning">
+                <div className="stat-value">{stats.thisWeekVisits}</div>
+                <div className="stat-label">This Week</div>
+              </div>
               <div className="stat-card stat-info">
+                <div className="stat-value">{stats.thisMonthVisits}</div>
+                <div className="stat-label">This Month</div>
+              </div>
+              <div className="stat-card stat-secondary">
                 <div className="stat-value">{stats.totalVisits}</div>
                 <div className="stat-label">All-Time Visits</div>
               </div>
@@ -122,7 +165,7 @@ function Admin() {
               <div className="search-box">
                 <input
                   type="text"
-                  placeholder="🔍 Search by name or email..."
+                  placeholder="🔍 Search by name or phone..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="search-input"
@@ -196,50 +239,9 @@ function Admin() {
           </div>
 
           <div className="sidebar-section">
-            <div className="activity-panel">
-              <div className="activity-header">
-                <h3>🔔 Recent Activity</h3>
-                <span className="activity-badge">{recentActivity.length}</span>
-              </div>
-              
-              <div className="activity-feed">
-                {recentActivity.length === 0 ? (
-                  <div className="no-activity">
-                    <p>No activity yet today</p>
-                    <p className="small-text">Check-ins will appear here in real-time</p>
-                  </div>
-                ) : (
-                  recentActivity.map((activity, index) => (
-                    <div key={index} className="activity-item">
-                      <div className="activity-icon">✓</div>
-                      <div className="activity-details">
-                        <div className="activity-name">{activity.name}</div>
-                        <div className="activity-time">
-                          {new Date(activity.timestamp).toLocaleTimeString()}
-                        </div>
-                        <div className="activity-action">Checked In</div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="qr-status-panel">
-              <h3>📱 Entry Status</h3>
-              <div className="status-item">
-                <span className="status-label">Entrance QR:</span>
-                <span className="status-value active">● Active</span>
-              </div>
-              <div className="status-item">
-                <span className="status-label">Security Check:</span>
-                <span className="status-value active">● Online</span>
-              </div>
-              <div className="status-item">
-                <span className="status-label">Last Refresh:</span>
-                <span className="status-value">{new Date().toLocaleTimeString()}</span>
-              </div>
-            </div>
+            <ReportLinks />
+            <RecentActivity activities={recentActivity} />
+            <StatusCard />
           </div>
         </div>
       </div>
