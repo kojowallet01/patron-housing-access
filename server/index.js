@@ -3,7 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import Database from 'better-sqlite3';
-import { promises as fs } from 'fs';
+import { promises as fs, mkdirSync } from 'fs';
 import QRCode from 'qrcode';
 import path from 'path';
 import os from 'os';
@@ -12,7 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
-const DB_FILE = path.join(process.cwd(), 'patron-housing.db');
+const DB_FILE = process.env.DB_PATH || path.join(process.cwd(), 'patron-housing.db');
 const CAMPUS_INSTITUTE_NAME = process.env.CAMPUS_INSTITUTE_NAME || 'CAMPUS INSTITUTE';
 const DEFAULT_CAMPUS = process.env.DEFAULT_CAMPUS || 'TESANO CAMPUS';
 const SUB_CAMPUSES = [
@@ -143,6 +143,12 @@ app.use('/api', (req, res, next) => {
 });
 app.use('/api/register', authLimiter);
 app.use('/api/verify-token', authLimiter);
+
+try {
+  mkdirSync(path.dirname(DB_FILE), { recursive: true });
+} catch (error) {
+  console.warn('Could not create database directory:', error.message || error);
+}
 
 const db = new Database(DB_FILE);
 db.pragma('journal_mode = WAL');

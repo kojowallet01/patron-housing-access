@@ -1,0 +1,34 @@
+# Render Blueprint for Patron Housing Access
+# Deploy: Render dashboard -> New -> Blueprint -> select this repo
+services:
+  - type: web
+    name: patron-housing-access
+    runtime: docker
+    repo: https://github.com/kojowallet01/patron-housing-access
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    autoDeploy: true
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DB_PATH
+        value: /data/patron-housing.db
+      - key: PUBLIC_BASE_URL
+        value: $RENDER_EXTERNAL_URL
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: SECURITY_TOKEN
+        sync: false
+      - key: SUPER_ADMIN_TOKEN
+        sync: false
+      - key: CAMPUS_ADMIN_TOKENS
+        sync: false
+      - key: CAMPUS_SECURITY_TOKENS
+        sync: false
