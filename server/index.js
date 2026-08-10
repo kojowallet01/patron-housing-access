@@ -6,6 +6,7 @@ import Database from 'better-sqlite3';
 import { promises as fs } from 'fs';
 import QRCode from 'qrcode';
 import path from 'path';
+import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { createClient } from '@supabase/supabase-js';
 
@@ -212,20 +213,26 @@ function migrateStudentsPhoneConstraint() {
     return;
   }
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS students_new (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      phone TEXT NOT NULL,
-      purpose TEXT NOT NULL,
-      campus TEXT NOT NULL DEFAULT 'TESANO CAMPUS',
-      created_at TEXT NOT NULL,
-      UNIQUE(phone, campus)
-    );
-    INSERT OR IGNORE INTO students_new SELECT id, name, phone, purpose, campus, created_at FROM students;
-    DROP TABLE students;
-    ALTER TABLE students_new RENAME TO students;
-  `);
+  db.pragma('foreign_keys = OFF');
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS students_new (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        campus TEXT NOT NULL DEFAULT 'TESANO CAMPUS',
+        created_at TEXT NOT NULL,
+        UNIQUE(phone, campus)
+      );
+      INSERT OR IGNORE INTO students_new SELECT id, name, phone, purpose, campus, created_at FROM students;
+      DROP TABLE students;
+      ALTER TABLE students_new RENAME TO students;
+    `);
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
 }
 
 migrateStudentsPhoneConstraint();
@@ -447,9 +454,32 @@ if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
   }
 }
 
+function getLanIPv4() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const net of interfaces[name] || []) {
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return null;
+}
+
 function buildBaseUrl(req) {
-  const host = req.get('host');
+  const publicBaseUrl = process.env.PUBLIC_BASE_URL;
+  if (publicBaseUrl) {
+    return publicBaseUrl.replace(/\/+$/, '');
+  }
+
   const protocol = req.protocol;
+  const lanAddress = getLanIPv4();
+  if (lanAddress) {
+    const frontendPort = process.env.NODE_ENV === 'production' ? PORT : 3000;
+    return `${protocol}://${lanAddress}:${frontendPort}`;
+  }
+
+  const host = req.get('host');
   if (host?.includes(':3001') && process.env.NODE_ENV !== 'production') {
     return `${protocol}://${host.replace(':3001', ':3000')}`;
   }
