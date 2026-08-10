@@ -5,5 +5,5 @@ services:
     ports:
       - '3001:3001'
     volumes:
-      - ./db.json:/app/db.json
+      - ./patron-housing.db:/app/patron-housing.db
     restart: unless-stopped
