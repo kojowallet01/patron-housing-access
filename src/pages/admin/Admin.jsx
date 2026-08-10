@@ -17,10 +17,17 @@ function Admin() {
   const [rangeVisitors, setRangeVisitors] = useState([])
   const [rangeInfo, setRangeInfo] = useState(null)
   const [rangeLoading, setRangeLoading] = useState(false)
+  const [credentialMap, setCredentialMap] = useState({ admin: {}, security: {} })
+  const [draftPasswords, setDraftPasswords] = useState({})
+  const [credentialMessage, setCredentialMessage] = useState('')
+  const isSuperAdmin = (window.localStorage.getItem('campus-institute-role') || 'admin') === 'super-admin'
 
   useEffect(() => {
     fetchData()
     fetchVisitRange('day')
+    if (isSuperAdmin) {
+      fetchPasswordMap()
+    }
   }, [])
 
   useEffect(() => {
@@ -75,6 +82,62 @@ function Admin() {
       console.error('Error fetching visit range:', error)
     } finally {
       setRangeLoading(false)
+    }
+  }
+
+  const fetchPasswordMap = async () => {
+    try {
+      const authHeaders = getCampusAuthHeaders('admin')
+      const response = await fetch(`${API_URL}/super-admin/passwords`, { headers: authHeaders })
+      if (!response.ok) {
+        throw new Error('Unable to fetch password map')
+      }
+
+      const data = await response.json()
+      setCredentialMap({
+        admin: data.admin || {},
+        security: data.security || {}
+      })
+    } catch (error) {
+      console.error('Error fetching credential map:', error)
+    }
+  }
+
+  const handlePasswordChange = (campusName, role, value) => {
+    setDraftPasswords(prev => ({
+      ...prev,
+      [`${campusName}:${role}`]: value
+    }))
+  }
+
+  const saveCampusPassword = async (campusName, role) => {
+    const value = (draftPasswords[`${campusName}:${role}`] ?? credentialMap[role]?.[campusName] ?? '').trim()
+
+    if (!value) {
+      setCredentialMessage('Password cannot be empty.')
+      return
+    }
+
+    try {
+      const authHeaders = getCampusAuthHeaders('admin')
+      const response = await fetch(`${API_URL}/super-admin/passwords`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ campus: campusName, role, password: value })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to save password')
+      }
+
+      setCredentialMessage(`${role.toUpperCase()} password saved for ${campusName}.`)
+      await fetchPasswordMap()
+    } catch (error) {
+      console.error('Error saving campus password:', error)
+      setCredentialMessage('Unable to save the password at the moment.')
     }
   }
 
@@ -145,6 +208,48 @@ function Admin() {
                 <div className="stat-label">All-Time Visits</div>
               </div>
             </div>
+
+            {isSuperAdmin && (
+              <div className="credential-manager" style={{ marginBottom: 24 }}>
+                <h3>Campus Password Manager</h3>
+                <div className="credential-grid" style={{ display: 'grid', gap: 12 }}>
+                  {['TESANO CAMPUS', 'CHRISTIANSBORG CAMPUS', 'ASHIAMAN CAMPUS', 'LEGON CAMPUS'].map((campusName) => (
+                    <div key={campusName} className="credential-card" style={{ border: '1px solid #dfe6f1', borderRadius: 14, padding: 16, background: '#f8fafc' }}>
+                      <div style={{ fontWeight: 700, marginBottom: 12 }}>{campusName}</div>
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Admin password</label>
+                          <input
+                            type="password"
+                            value={draftPasswords[`${campusName}:admin`] ?? credentialMap.admin?.[campusName] ?? ''}
+                            onChange={(e) => handlePasswordChange(campusName, 'admin', e.target.value)}
+                            placeholder="Set admin password"
+                            style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Security password</label>
+                          <input
+                            type="password"
+                            value={draftPasswords[`${campusName}:security`] ?? credentialMap.security?.[campusName] ?? ''}
+                            onChange={(e) => handlePasswordChange(campusName, 'security', e.target.value)}
+                            placeholder="Set security password"
+                            style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1' }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button className="btn btn-primary" onClick={() => saveCampusPassword(campusName, 'admin')} style={{ width: 'auto', padding: '10px 16px' }}>Save Admin</button>
+                          <button className="btn btn-secondary" onClick={() => saveCampusPassword(campusName, 'security')} style={{ width: 'auto', padding: '10px 16px' }}>Save Security</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {credentialMessage && (
+                  <div className="alert alert-success" style={{ marginTop: 12 }}>{credentialMessage}</div>
+                )}
+              </div>
+            )}
 
             <div className="admin-controls">
               <div className="view-tabs">

@@ -244,6 +244,75 @@ body {
   background: #e0e0e0;
 }
 
+.campus-card {
+  min-height: 130px;
+  border-radius: 18px;
+  color: #ffffff;
+  border: 3px solid rgba(255,255,255,0.2);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 12px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.campus-card:hover {
+  filter: brightness(1.05);
+  transform: translateY(-2px);
+}
+
+.campus-card-title {
+  text-align: center;
+  line-height: 1.2;
+}
+
+.security-input,
+select,
+input[type="password"] {
+  background: rgba(255,255,255,0.92);
+  border: 3px solid #3b82f6;
+  border-radius: 18px;
+  padding: 20px 22px;
+  font-size: 1.15rem;
+  color: #111827;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.10), inset 0 1px 2px rgba(15, 23, 42, 0.04);
+  outline: none;
+  width: 100%;
+  min-height: 68px;
+}
+
+.security-input:focus,
+select:focus,
+input[type="password"]:focus {
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+}
+
+select {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, #1f2937 50%), linear-gradient(135deg, #1f2937 50%, transparent 50%);
+  background-position: calc(100% - 22px) calc(50% - 3px), calc(100% - 16px) calc(50% - 3px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 48px;
+  font-weight: 500;
+}
+
+input[type="password"]::placeholder {
+  color: rgba(17, 24, 39, 0.55);
+}
+
+label {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #111827;
+}
+
 .alert {
   padding: 15px;
   border-radius: 8px;

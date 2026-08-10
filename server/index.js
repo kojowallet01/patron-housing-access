@@ -16,15 +16,19 @@ const CAMPUS_INSTITUTE_NAME = process.env.CAMPUS_INSTITUTE_NAME || 'CAMPUS INSTI
 const DEFAULT_CAMPUS = process.env.DEFAULT_CAMPUS || 'TESANO CAMPUS';
 const SUB_CAMPUSES = [
   'TESANO CAMPUS',
-  'TEMA CAMPUS',
-  'MADINA CAMPUS',
-  'CHRISTIANSBORG CAMPUS'
+  'CHRISTIANSBORG CAMPUS',
+  'ASHIAMAN CAMPUS',
+  'LEGON CAMPUS'
 ];
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 const SECURITY_TOKEN = process.env.SECURITY_TOKEN || '';
 const SUPER_ADMIN_TOKEN = process.env.SUPER_ADMIN_TOKEN || process.env.SUPER_ADMIN || '';
 const CAMPUS_ADMIN_TOKENS = parseTokenMap(process.env.CAMPUS_ADMIN_TOKENS || '');
 const CAMPUS_SECURITY_TOKENS = parseTokenMap(process.env.CAMPUS_SECURITY_TOKENS || '');
+const CAMPUS_TOKEN_STORAGE_KEYS = {
+  admin: 'campus_admin_tokens',
+  security: 'campus_security_tokens'
+};
 
 function parseTokenMap(rawValue) {
   if (!rawValue) return {};
@@ -62,6 +66,49 @@ function resolveCampusName(value) {
 
 function isMatchingToken(candidateToken, tokenValue) {
   return Boolean(candidateToken) && Boolean(tokenValue) && String(candidateToken) === String(tokenValue);
+}
+
+function readStoredCampusTokenMap(role) {
+  const key = CAMPUS_TOKEN_STORAGE_KEYS[role];
+  if (!key) return {};
+
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  if (!row?.value) return {};
+
+  try {
+    const parsed = JSON.parse(row.value);
+    if (parsed && typeof parsed === 'object') {
+      return Object.fromEntries(
+        Object.entries(parsed).map(([campus, token]) => [normalizeCampusName(campus), String(token)])
+      );
+    }
+  } catch (error) {
+    // ignore invalid JSON and fall back to empty map
+  }
+
+  return {};
+}
+
+function getCampusRoleToken(campusName, role) {
+  const normalizedCampus = resolveCampusName(campusName);
+  const storedMap = readStoredCampusTokenMap(role);
+  const envMap = role === 'admin' ? CAMPUS_ADMIN_TOKENS : CAMPUS_SECURITY_TOKENS;
+  return storedMap[normalizedCampus] || envMap[normalizedCampus] || (role === 'admin' ? ADMIN_TOKEN : SECURITY_TOKEN) || '';
+}
+
+function setCampusRoleToken(campusName, role, password) {
+  const key = CAMPUS_TOKEN_STORAGE_KEYS[role];
+  const normalizedCampus = resolveCampusName(campusName);
+  const existing = readStoredCampusTokenMap(role);
+
+  if (!password || !String(password).trim()) {
+    delete existing[normalizedCampus];
+  } else {
+    existing[normalizedCampus] = String(password).trim();
+  }
+
+  setSetting(key, JSON.stringify(existing));
+  return existing;
 }
 
 app.use(helmet());
@@ -157,7 +204,7 @@ function requireAdminAuth(req, res, next) {
   const token = req.get('x-admin-token') || req.get('x-super-admin-token') || '';
   const campus = resolveCampusName(req.get('x-campus') || req.body?.campus || req.query?.campus || DEFAULT_CAMPUS);
 
-  const campusAdminToken = CAMPUS_ADMIN_TOKENS[campus] || ADMIN_TOKEN;
+  const campusAdminToken = getCampusRoleToken(campus, 'admin');
   const superAdminMatches = SUPER_ADMIN_TOKEN && isMatchingToken(token, SUPER_ADMIN_TOKEN);
   const campusAdminMatches = campusAdminToken && isMatchingToken(token, campusAdminToken);
 
@@ -178,7 +225,7 @@ function requireSecurityAuth(req, res, next) {
   const token = req.get('x-security-token') || req.get('x-super-admin-token') || '';
   const campus = resolveCampusName(req.get('x-campus') || req.body?.campus || req.query?.campus || DEFAULT_CAMPUS);
 
-  const campusSecurityToken = CAMPUS_SECURITY_TOKENS[campus] || SECURITY_TOKEN;
+  const campusSecurityToken = getCampusRoleToken(campus, 'security');
   const superAdminMatches = SUPER_ADMIN_TOKEN && isMatchingToken(token, SUPER_ADMIN_TOKEN);
   const campusSecurityMatches = campusSecurityToken && isMatchingToken(token, campusSecurityToken);
 
@@ -458,6 +505,85 @@ app.post('/api/verify-token', requireSecurityAuth, (req, res) => {
   } catch (error) {
     console.error('Verification error:', error);
     res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
+app.post('/api/validate-login', (req, res) => {
+  try {
+    const { role, campus, password } = req.body || {};
+    const selectedRole = String(role || '').toLowerCase();
+    const selectedCampus = resolveCampusName(campus || DEFAULT_CAMPUS);
+    const passwordValue = String(password || '').trim();
+
+    if (!selectedRole || !['admin', 'security', 'super-admin'].includes(selectedRole)) {
+      return res.status(400).json({ valid: false, error: 'Valid role is required.' });
+    }
+
+    if (!passwordValue) {
+      return res.status(400).json({ valid: false, error: 'Password is required.' });
+    }
+
+    if (selectedRole === 'super-admin') {
+      const isValid = Boolean(SUPER_ADMIN_TOKEN) && isMatchingToken(passwordValue, SUPER_ADMIN_TOKEN);
+      return res.json({ valid: isValid, role: 'super-admin', campus: selectedCampus });
+    }
+
+    const expected = selectedRole === 'admin'
+      ? getCampusRoleToken(selectedCampus, 'admin') || ADMIN_TOKEN
+      : getCampusRoleToken(selectedCampus, 'security') || SECURITY_TOKEN;
+
+    const isValid = Boolean(expected) && isMatchingToken(passwordValue, expected);
+    return res.json({ valid: isValid, role: selectedRole, campus: selectedCampus });
+  } catch (error) {
+    console.error('Password validation error:', error);
+    return res.status(500).json({ valid: false, error: 'Validation failed.' });
+  }
+});
+
+app.get('/api/super-admin/passwords', requireAdminAuth, (req, res) => {
+  try {
+    if (!req.isSuperAdmin) {
+      return res.status(403).json({ error: 'Super admin access required.' });
+    }
+
+    const adminMap = readStoredCampusTokenMap('admin');
+    const securityMap = readStoredCampusTokenMap('security');
+    res.json({
+      admin: adminMap,
+      security: securityMap,
+      campuses: SUB_CAMPUSES
+    });
+  } catch (error) {
+    console.error('Password map fetch error:', error);
+    return res.status(500).json({ error: 'Failed to load campus password settings.' });
+  }
+});
+
+app.post('/api/super-admin/passwords', requireAdminAuth, (req, res) => {
+  try {
+    if (!req.isSuperAdmin) {
+      return res.status(403).json({ error: 'Super admin access required.' });
+    }
+
+    const { campus, role, password } = req.body || {};
+    const selectedRole = String(role || '').toLowerCase();
+    const selectedCampus = resolveCampusName(campus || DEFAULT_CAMPUS);
+
+    if (!selectedRole || !['admin', 'security'].includes(selectedRole)) {
+      return res.status(400).json({ error: 'Role must be admin or security.' });
+    }
+
+    setCampusRoleToken(selectedCampus, selectedRole, password);
+
+    return res.json({
+      success: true,
+      campus: selectedCampus,
+      role: selectedRole,
+      updated: true
+    });
+  } catch (error) {
+    console.error('Password update error:', error);
+    return res.status(500).json({ error: 'Failed to update campus password.' });
   }
 });
 
