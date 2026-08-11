@@ -8,16 +8,18 @@ export const API_URL = import.meta.env.PROD
 export const CAMPUS_INSTITUTE_NAME = 'CAMPUS INSTITUTE';
 export const CAMPUS_LIST = [
   'TESANO CAMPUS',
-  'CHRISTIANSBORG CAMPUS',
+  'CANTOMENT CAMPUS',
   'ASHIAMAN CAMPUS',
-  'LEGON CAMPUS'
+  'LEGON CAMPUS',
+  'TEMA CAMPUS'
 ];
 
 export const CAMPUS_COLORS = {
   'TESANO CAMPUS': '#2563eb',
-  'CHRISTIANSBORG CAMPUS': '#ec4899',
+  'CANTOMENT CAMPUS': '#ec4899',
   'ASHIAMAN CAMPUS': '#dc2626',
-  'LEGON CAMPUS': '#16a34a'
+  'LEGON CAMPUS': '#16a34a',
+  'TEMA CAMPUS': '#f59e0b'
 };
 
 export const DEFAULT_CAMPUS = import.meta.env.VITE_CAMPUS || 'TESANO CAMPUS';

@@ -336,7 +336,7 @@ function Admin() {
               <div className="credential-manager" style={{ marginBottom: 24 }}>
                 <h3>Campus Password Manager</h3>
                 <div className="credential-grid" style={{ display: 'grid', gap: 12 }}>
-                  {['TESANO CAMPUS', 'CHRISTIANSBORG CAMPUS', 'ASHIAMAN CAMPUS', 'LEGON CAMPUS'].map((campusName) => (
+                  {['TESANO CAMPUS', 'CANTOMENT CAMPUS', 'ASHIAMAN CAMPUS', 'LEGON CAMPUS', 'TEMA CAMPUS'].map((campusName) => (
                     <div key={campusName} className="credential-card" style={{ border: '1px solid #dfe6f1', borderRadius: 14, padding: 16, background: '#f8fafc' }}>
                       <div style={{ fontWeight: 700, marginBottom: 12 }}>{campusName}</div>
                       <div style={{ display: 'grid', gap: 10 }}>

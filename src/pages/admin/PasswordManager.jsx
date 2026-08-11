@@ -13,7 +13,7 @@ import {
 import { API_URL, getCampusAuthHeaders } from '../../config'
 import { useAdminContext } from './AdminLayout'
 
-const CAMPUSES = ['TESANO CAMPUS', 'CHRISTIANSBORG CAMPUS', 'ASHIAMAN CAMPUS', 'LEGON CAMPUS']
+const CAMPUSES = ['TESANO CAMPUS', 'CANTOMENT CAMPUS', 'ASHIAMAN CAMPUS', 'LEGON CAMPUS', 'TEMA CAMPUS']
 
 const ROLES = [
   { value: 'admin', label: 'Admin', icon: UserCog, desc: 'Access for campus administrators' },

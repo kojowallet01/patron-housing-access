@@ -6,9 +6,10 @@ This project is a multi-campus access and visitor management system for CAMPUS I
 ## Campus structure
 The current campus set is:
 - TESANO CAMPUS
-- CHRISTIANSBORG CAMPUS
+- CANTOMENT CAMPUS
 - ASHIAMAN CAMPUS
 - LEGON CAMPUS
+- TEMA CAMPUS
 
 Each campus has its own login and access flow, and the selected campus is preserved in browser storage.
 

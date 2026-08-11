@@ -4,7 +4,7 @@
 This project now includes the CAMPUS INSTITUTE multi-campus access flow with role-based login and campus-aware access control.
 
 ## Included features
-- Multi-campus branding for: TESANO CAMPUS, CHRISTIANSBORG CAMPUS, ASHIAMAN CAMPUS, LEGON CAMPUS
+- Multi-campus branding for: TESANO CAMPUS, CANTOMENT CAMPUS, ASHIAMAN CAMPUS, LEGON CAMPUS, TEMA CAMPUS
 - Combined login screen with:
   - role selection
   - campus selection
