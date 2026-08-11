@@ -1537,6 +1537,24 @@ tr:hover {
   border: 1px solid #e5e7eb;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.role-gate-page .page-card h3 {
+  margin: 0 auto;
+  max-width: 520px;
+}
+
+.role-gate-page .page-card > p {
+  margin: 0 auto;
+  max-width: 520px;
+}
+
+.role-gate-page .page-card label {
+  text-align: left;
+  display: block;
 }
 
 .role-gate-page .campus-card {
