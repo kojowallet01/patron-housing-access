@@ -1958,3 +1958,255 @@ tr:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== SIDEBAR WIDGETS ===== */
+.sidebar-card {
+  background: white;
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  padding: 22px;
+}
+
+.sidebar-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.sidebar-card-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #1f2937;
+}
+
+.sidebar-card-header p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+/* Report links widget */
+.report-links {
+  display: grid;
+  gap: 10px;
+}
+
+.report-link-btn {
+  width: 100%;
+  padding: 13px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #374151;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.report-link-btn::before {
+  content: '📊';
+  font-size: 1rem;
+}
+
+.report-link-btn:hover {
+  background: #eef2ff;
+  border-color: #667eea;
+  color: #667eea;
+  transform: translateX(3px);
+}
+
+/* Status widget */
+.status-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 0.92rem;
+  color: #4b5563;
+}
+
+.status-row:last-child {
+  border-bottom: none;
+}
+
+.status-active {
+  background: #d1fae5;
+  color: #047857;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* ===== REPORT PAGE ===== */
+.report-title-block {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.report-logo {
+  height: 56px;
+  width: 56px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #111827;
+  padding: 8px;
+}
+
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.report-period-badge {
+  background: #eef2ff;
+  color: #667eea;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+.report-campus-line {
+  font-size: 0.95rem;
+  color: #6b7280;
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid #667eea;
+  border-radius: 10px;
+}
+
+.report-campus-line strong {
+  color: #1f2937;
+}
+
+.report-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.summary-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+}
+
+.summary-primary .summary-label {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.summary-primary strong {
+  color: #ffffff;
+}
+
+.report-table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 22px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.report-table-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #1f2937;
+}
+
+.report-row-count {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  color: #6b7280;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 20px;
+}
+
+.report-table-scroll {
+  overflow-x: auto;
+}
+
+.report-index {
+  color: #9ca3af;
+  font-weight: 600;
+  width: 48px;
+}
+
+.report-table th {
+  position: sticky;
+  top: 0;
+}
+
+/* ===== PRINT STYLES ===== */
+@media print {
+  body {
+    background: white !important;
+  }
+
+  .admin-header,
+  .report-campus-line,
+  .report-actions,
+  .report-row-count {
+    display: none !important;
+  }
+
+  .report-content {
+    padding: 0 !important;
+  }
+
+  .report-table-card {
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
+  }
+
+  .report-table thead th {
+    background: #f5f5f5 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .report-table tbody tr:nth-child(even) {
+    background: #fafafa !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .summary-card {
+    border: 1px solid #ddd !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .report-summary-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .report-title-block {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+}
