@@ -491,17 +491,23 @@ function buildBaseUrl(req) {
   }
 
   const protocol = req.protocol;
+  const host = req.get('host');
+
+  // In production, use the public request host (Render/Vercel/etc.)
+  if (process.env.NODE_ENV === 'production' && host) {
+    return `${protocol}://${host}`;
+  }
+
   const lanAddress = getLanIPv4();
   if (lanAddress) {
     const frontendPort = process.env.NODE_ENV === 'production' ? PORT : 3000;
     return `${protocol}://${lanAddress}:${frontendPort}`;
   }
 
-  const host = req.get('host');
   if (host?.includes(':3001') && process.env.NODE_ENV !== 'production') {
     return `${protocol}://${host.replace(':3001', ':3000')}`;
   }
-  return `${protocol}://${host}`;
+  return host ? `${protocol}://${host}` : '';
 }
 
 function createTokenForStudent(studentId, campusName = DEFAULT_CAMPUS) {
