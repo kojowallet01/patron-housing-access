@@ -1,11 +1,27 @@
 import React, { useState, useEffect } from 'react'
 import { API_URL, getCampusAuthHeaders, getSelectedCampus } from '../../config'
+import { validateSession } from '../../auth'
 
 export default function ReportView({ range, title, subtitle }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const campus = getSelectedCampus()
+  const [activeCampus, setActiveCampus] = useState(getSelectedCampus())
+
+  useEffect(() => {
+    let active = true
+
+    validateSession().then((session) => {
+      if (!active) return
+      if (session.valid && !session.isSuperAdmin) {
+        setActiveCampus(session.campus || getSelectedCampus())
+      }
+    })
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     fetchReport()
@@ -15,7 +31,7 @@ export default function ReportView({ range, title, subtitle }) {
     try {
       setLoading(true)
       setError(null)
-      const authHeaders = getCampusAuthHeaders('admin')
+      const authHeaders = getCampusAuthHeaders(activeCampus)
       const res = await fetch(`${API_URL}/admin/visits?range=${range}`, { headers: authHeaders })
       if (!res.ok) {
         const body = await res.json().catch(() => null)
@@ -84,7 +100,7 @@ export default function ReportView({ range, title, subtitle }) {
 
       <div className="admin-content report-content">
         <div className="report-campus-line">
-          Campus: <strong>{campus}</strong>
+          Campus: <strong>{activeCampus}</strong>
         </div>
 
         <div className="report-summary-row">
@@ -136,7 +152,7 @@ export default function ReportView({ range, title, subtitle }) {
                         <td><strong>{student.name}</strong></td>
                         <td>{student.phone || '-'}</td>
                         <td>{student.purpose || '-'}</td>
-                        <td>{student.campus || campus}</td>
+                        <td>{student.campus || activeCampus}</td>
                         <td>{new Date(student.used_at).toLocaleString()}</td>
                       </tr>
                     ))

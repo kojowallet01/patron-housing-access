@@ -1,13 +1,33 @@
 import React, { useState, useEffect } from 'react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import { API_URL, CAMPUS_INSTITUTE_NAME, getCampusAuthHeaders, getSelectedCampus } from '../config'
+import { validateSession } from '../auth'
 
 function Security() {
-  const campus = getSelectedCampus()
+  const [activeCampus, setActiveCampus] = useState(getSelectedCampus())
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [token, setToken] = useState('')
   const [result, setResult] = useState(null)
   const [verifying, setVerifying] = useState(false)
   const [scanning, setScanning] = useState(false)
+
+  useEffect(() => {
+    let active = true
+
+    validateSession().then((session) => {
+      if (!active) return
+      if (session.valid) {
+        setIsSuperAdmin(Boolean(session.isSuperAdmin))
+        if (!session.isSuperAdmin) {
+          setActiveCampus(session.campus || getSelectedCampus())
+        }
+      }
+    })
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!scanning) return
@@ -50,9 +70,9 @@ function Security() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getCampusAuthHeaders('security')
+          ...getCampusAuthHeaders(activeCampus)
         },
-        body: JSON.stringify({ token: value, campus })
+        body: JSON.stringify({ token: value, campus: activeCampus })
       })
 
       const data = await response.json()
@@ -88,7 +108,7 @@ function Security() {
       <div className="security-header">
         <img src="/logo.png" alt="Patron Housing" className="page-logo-small" />
         <h1>Security Verification</h1>
-        <p>{CAMPUS_INSTITUTE_NAME} • {campus}</p>
+        <p>{CAMPUS_INSTITUTE_NAME} • {activeCampus}</p>
       </div>
 
       <div className="security-content">
@@ -192,9 +212,11 @@ function Security() {
       </div>
 
       <div className="security-footer">
-        <button className="btn btn-secondary" onClick={() => window.location.href = '/campus-selector'}>
-          Switch Campus
-        </button>
+        {isSuperAdmin && (
+          <button className="btn btn-secondary" onClick={() => window.location.href = '/campus-selector'}>
+            Switch Campus
+          </button>
+        )}
         <p>Contact administrator for assistance</p>
       </div>
     </div>

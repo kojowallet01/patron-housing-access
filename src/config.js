@@ -42,8 +42,8 @@ export function setSelectedCampus(campus) {
   window.localStorage.setItem(CAMPUS_STORAGE_KEY, nextCampus);
 }
 
-export function getCampusAuthHeaders() {
-  const campus = getSelectedCampus();
+export function getCampusAuthHeaders(campusOverride) {
+  const campus = campusOverride || getSelectedCampus();
   const headers = { 'x-campus': campus };
 
   if (typeof window !== 'undefined') {

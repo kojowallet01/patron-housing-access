@@ -7,7 +7,7 @@ import StatusCard from './StatusCard'
 import Analytics from './Analytics'
 
 function Admin() {
-  const campus = getSelectedCampus()
+  const [activeCampus, setActiveCampus] = useState(getSelectedCampus())
   const [stats, setStats] = useState(null)
   const [todayVisitors, setTodayVisitors] = useState([])
   const [allStudents, setAllStudents] = useState([])
@@ -40,8 +40,13 @@ function Admin() {
 
     validateSession().then((session) => {
       if (!active) return
+      if (session.valid) {
+        setIsSuperAdmin(Boolean(session.isSuperAdmin))
+        if (!session.isSuperAdmin) {
+          setActiveCampus(session.campus || getSelectedCampus())
+        }
+      }
       if (session.valid && session.isSuperAdmin) {
-        setIsSuperAdmin(true)
         fetchPasswordMap()
       }
     })
@@ -62,7 +67,7 @@ function Admin() {
 
   const fetchData = async () => {
     try {
-      const authHeaders = getCampusAuthHeaders('admin')
+      const authHeaders = getCampusAuthHeaders(activeCampus)
       const [statsRes, todayRes, studentsRes] = await Promise.all([
         fetch(`${API_URL}/admin/stats`, { headers: authHeaders }),
         fetch(`${API_URL}/admin/today`, { headers: authHeaders }),
@@ -94,8 +99,8 @@ function Admin() {
   const fetchVisitRange = async (range = 'day') => {
     try {
       setRangeLoading(true)
-      const authHeaders = getCampusAuthHeaders('admin')
-      const visitsRes = await fetch(`${API_URL}/admin/visits?range=${range}&campus=${encodeURIComponent(campus)}`, { headers: authHeaders })
+      const authHeaders = getCampusAuthHeaders(activeCampus)
+      const visitsRes = await fetch(`${API_URL}/admin/visits?range=${range}&campus=${encodeURIComponent(activeCampus)}`, { headers: authHeaders })
       const visitsData = await visitsRes.json()
       setRangeVisitors(visitsData.students || [])
       setRangeInfo(visitsData)
@@ -109,7 +114,7 @@ function Admin() {
 
   const fetchPasswordMap = async () => {
     try {
-      const authHeaders = getCampusAuthHeaders('admin')
+      const authHeaders = getCampusAuthHeaders(activeCampus)
       const response = await fetch(`${API_URL}/super-admin/passwords`, { headers: authHeaders })
       if (!response.ok) {
         throw new Error('Unable to fetch password map')
@@ -127,8 +132,8 @@ function Admin() {
 
   const fetchAnalytics = async (range = 'day') => {
     try {
-      const authHeaders = getCampusAuthHeaders('admin')
-      const response = await fetch(`${API_URL}/admin/analytics?range=${range}&campus=${encodeURIComponent(campus)}`, { headers: authHeaders })
+      const authHeaders = getCampusAuthHeaders(activeCampus)
+      const response = await fetch(`${API_URL}/admin/analytics?range=${range}&campus=${encodeURIComponent(activeCampus)}`, { headers: authHeaders })
       if (!response.ok) return
       const data = await response.json()
       setAnalytics(data)
@@ -173,14 +178,14 @@ function Admin() {
     }
 
     try {
-      const authHeaders = getCampusAuthHeaders('admin')
+      const authHeaders = getCampusAuthHeaders(activeCampus)
       const response = await fetch(`${API_URL}/admin/students`, {
         method: 'POST',
         headers: {
           ...authHeaders,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ ...addForm, campus })
+        body: JSON.stringify({ ...addForm, campus: activeCampus })
       })
 
       const data = await response.json()
@@ -189,7 +194,7 @@ function Admin() {
         return
       }
 
-      setAddMessage({ type: 'success', text: `${addForm.name} added to ${campus}.` })
+      setAddMessage({ type: 'success', text: `${addForm.name} added to ${activeCampus}.` })
       setAddForm({ name: '', phone: '', purpose: '' })
       setShowAddForm(false)
       fetchData()
@@ -201,7 +206,7 @@ function Admin() {
 
   const handleFlag = async (student, flagged, note) => {
     try {
-      const authHeaders = getCampusAuthHeaders('admin')
+      const authHeaders = getCampusAuthHeaders(activeCampus)
       const response = await fetch(`${API_URL}/admin/students/${student.id}/flag`, {
         method: 'POST',
         headers: {
@@ -234,7 +239,7 @@ function Admin() {
     }
 
     try {
-      const authHeaders = getCampusAuthHeaders('admin')
+      const authHeaders = getCampusAuthHeaders(activeCampus)
       const response = await fetch(`${API_URL}/super-admin/passwords`, {
         method: 'POST',
         headers: {
@@ -281,13 +286,15 @@ function Admin() {
           <img src="/logo.png" alt="Patron Housing" className="admin-logo" />
           <div>
             <h1>Admin Dashboard</h1>
-            <p>{CAMPUS_INSTITUTE_NAME} • {campus}</p>
+            <p>{CAMPUS_INSTITUTE_NAME} • {activeCampus}</p>
           </div>
         </div>
         <div className="header-actions">
-          <button className="btn btn-secondary" onClick={() => window.location.href = '/campus-selector'}>
-            Switch Campus
-          </button>
+          {isSuperAdmin && (
+            <button className="btn btn-secondary" onClick={() => window.location.href = '/campus-selector'}>
+              Switch Campus
+            </button>
+          )}
           <div className="live-indicator">
             <span className="pulse-dot"></span>
             <span>Live</span>
@@ -412,7 +419,7 @@ function Admin() {
                 {view === 'all' && (
                   <button
                     className="btn btn-secondary btn-small"
-                    onClick={() => exportCSV(allStudents, `residents-${campus.replace(/\s+/g, '-').toLowerCase()}.csv`, [
+                    onClick={() => exportCSV(allStudents, `residents-${activeCampus.replace(/\s+/g, '-').toLowerCase()}.csv`, [
                       { key: 'name', label: 'Name' },
                       { key: 'phone', label: 'Phone' },
                       { key: 'purpose', label: 'Purpose' },
@@ -526,7 +533,7 @@ function Admin() {
       {showAddForm && (
         <div className="modal-overlay" onClick={() => setShowAddForm(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Add Visitor to {campus}</h3>
+            <h3>Add Visitor to {activeCampus}</h3>
             <p className="modal-subtitle">Add a resident or visitor without the QR registration flow.</p>
 
             <form onSubmit={handleAddVisitor}>

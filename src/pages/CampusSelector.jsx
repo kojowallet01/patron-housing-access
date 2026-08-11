@@ -1,8 +1,24 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, getSelectedCampus, setSelectedCampus } from '../config'
+import { validateSession } from '../auth'
 
 function CampusSelector() {
   const [selectedCampus, setSelected] = useState(getSelectedCampus())
+
+  useEffect(() => {
+    let active = true
+
+    validateSession().then((session) => {
+      if (!active) return
+      if (session.valid && !session.isSuperAdmin) {
+        window.location.href = '/admin'
+      }
+    })
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   const handleSelect = (campus) => {
     setSelected(campus)
