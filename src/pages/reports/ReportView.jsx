@@ -8,17 +8,23 @@ export default function ReportView({ range, title, subtitle }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [purpose, setPurpose] = useState('')
+
+  useEffect(() => {
+    setPurpose('')
+  }, [range, activeCampus])
 
   useEffect(() => {
     fetchReport()
-  }, [range, activeCampus, refreshKey])
+  }, [range, activeCampus, refreshKey, purpose])
 
   const fetchReport = async () => {
     try {
       setLoading(true)
       setError(null)
       const authHeaders = getCampusAuthHeaders(activeCampus)
-      const res = await fetch(`${API_URL}/admin/visits?range=${range}`, { headers: authHeaders })
+      const purposeQuery = purpose ? `&purpose=${encodeURIComponent(purpose)}` : ''
+      const res = await fetch(`${API_URL}/admin/visits?range=${range}${purposeQuery}`, { headers: authHeaders })
       if (!res.ok) {
         const body = await res.json().catch(() => null)
         throw new Error(body?.error || 'Failed to load report')
@@ -106,6 +112,35 @@ export default function ReportView({ range, title, subtitle }) {
           <div className="admin-stat-value admin-stat-value-sm">{data?.end || '--'}</div>
         </div>
       </div>
+
+      {(data?.purposes?.length || 0) > 0 && (
+        <div className="admin-card admin-filters-card">
+          <div className="admin-purpose-filter">
+            <span className="admin-purpose-filter-label">Filter by purpose:</span>
+            <button
+              type="button"
+              className={`admin-purpose-chip${!purpose ? ' active' : ''}`}
+              onClick={() => setPurpose('')}
+            >
+              All
+              <span className="admin-purpose-chip-count">
+                {data.purposes.reduce((sum, p) => sum + (p.count || 0), 0)}
+              </span>
+            </button>
+            {data.purposes.map(p => (
+              <button
+                key={p.purpose}
+                type="button"
+                className={`admin-purpose-chip${purpose === p.purpose ? ' active' : ''}`}
+                onClick={() => setPurpose(p.purpose)}
+              >
+                {p.purpose}
+                <span className="admin-purpose-chip-count">{p.count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="admin-card">
         <div className="admin-card-header">

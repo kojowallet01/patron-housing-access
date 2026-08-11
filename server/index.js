@@ -791,7 +791,7 @@ app.get('/api/admin/stats', requireAdminAuth, async (req, res) => {
 
 app.get('/api/admin/visits', requireAdminAuth, async (req, res) => {
   try {
-    const { range = 'day', start, end, campus } = req.query;
+    const { range = 'day', start, end, campus, purpose } = req.query;
     let periodStart = start;
     let periodEnd = end;
     const campusName = resolveCampusName(campus || req.userCampus || DEFAULT_CAMPUS);
@@ -808,7 +808,21 @@ app.get('/api/admin/visits', requireAdminAuth, async (req, res) => {
 
     const rows = await listTokensWithStudents(req.isSuperAdmin ? null : campusName, periodStart, periodEnd);
 
-    const students = rows.map(v => ({
+    const purposeCounts = {};
+    rows.forEach(v => {
+      const key = (v.purpose || 'Not specified').trim();
+      purposeCounts[key] = (purposeCounts[key] || 0) + 1;
+    });
+    const purposes = Object.entries(purposeCounts)
+      .map(([key, count]) => ({ purpose: key, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const filterTerm = String(purpose || '').trim().toLowerCase();
+    const filteredRows = filterTerm
+      ? rows.filter(v => (v.purpose || 'Not specified').trim().toLowerCase() === filterTerm)
+      : rows;
+
+    const students = filteredRows.map(v => ({
       name: v.name,
       phone: v.phone,
       purpose: v.purpose,
@@ -817,7 +831,7 @@ app.get('/api/admin/visits', requireAdminAuth, async (req, res) => {
       valid_date: v.valid_date
     }));
 
-    res.json({ range, start: periodStart, end: periodEnd, count: students.length, students });
+    res.json({ range, start: periodStart, end: periodEnd, count: students.length, students, purposes });
   } catch (error) {
     console.error('Visits query error:', error);
     res.status(500).json({ error: 'Failed to fetch visit data' });
