@@ -1,31 +1,17 @@
 import React, { useState, useEffect } from 'react'
-import { API_URL, getCampusAuthHeaders, getSelectedCampus } from '../../config'
-import { validateSession } from '../../auth'
+import { Download, Printer, CalendarRange } from 'lucide-react'
+import { API_URL, getCampusAuthHeaders } from '../../config'
+import { useAdminContext } from '../admin/AdminLayout'
 
 export default function ReportView({ range, title, subtitle }) {
+  const { activeCampus, refreshKey } = useAdminContext()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [activeCampus, setActiveCampus] = useState(getSelectedCampus())
-
-  useEffect(() => {
-    let active = true
-
-    validateSession().then((session) => {
-      if (!active) return
-      if (session.valid && !session.isSuperAdmin) {
-        setActiveCampus(session.campus || getSelectedCampus())
-      }
-    })
-
-    return () => {
-      active = false
-    }
-  }, [])
 
   useEffect(() => {
     fetchReport()
-  }, [range])
+  }, [range, activeCampus, refreshKey])
 
   const fetchReport = async () => {
     try {
@@ -73,97 +59,98 @@ export default function ReportView({ range, title, subtitle }) {
   const uniqueVisitors = data?.students ? new Set(data.students.map(s => s.phone)).size : 0
 
   return (
-    <div className="fullscreen-container admin-page report-page">
-      <div className="admin-header report-header-row">
-        <div className="report-title-block">
-          <img src="/logo.png" alt="Patron Housing" className="report-logo" />
-          <div>
-            <h1>{title}</h1>
-            <p className="report-subtitle">{subtitle}</p>
-          </div>
+    <div className="admin-page-container">
+      <div className="admin-page-heading admin-report-heading">
+        <div>
+          <h1 className="admin-page-title">{title}</h1>
+          <p className="admin-page-subtitle">
+            {subtitle} · <strong>{activeCampus}</strong>
+          </p>
         </div>
-        <div className="header-actions report-actions">
-          <span className="report-period-badge">
+        <div className="admin-report-actions">
+          <span className="admin-report-period">
+            <CalendarRange size={15} strokeWidth={2} />
             {data ? `${data.start} → ${data.end}` : 'Loading…'}
           </span>
-          <button className="btn btn-secondary btn-small" onClick={exportCSV} disabled={!data?.students?.length}>
-            ⬇ Export CSV
+          <button
+            type="button"
+            className="admin-btn admin-btn-secondary"
+            onClick={exportCSV}
+            disabled={!data?.students?.length}
+          >
+            <Download size={16} strokeWidth={2} />
+            Export CSV
           </button>
-          <button className="btn btn-secondary btn-small" onClick={() => window.print()}>
-            🖨 Print
+          <button type="button" className="admin-btn admin-btn-secondary" onClick={() => window.print()}>
+            <Printer size={16} strokeWidth={2} />
+            Print
           </button>
-          <a className="btn btn-refresh" href="/admin">
-            ← Dashboard
-          </a>
         </div>
       </div>
 
-      <div className="admin-content report-content">
-        <div className="report-campus-line">
-          Campus: <strong>{activeCampus}</strong>
+      <div className="report-summary-row">
+        <div className="admin-stat-card">
+          <div className="admin-stat-label">Total Visits</div>
+          <div className="admin-stat-value">{data?.count ?? '--'}</div>
         </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-label">Unique Visitors</div>
+          <div className="admin-stat-value">{data ? uniqueVisitors : '--'}</div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-label">Period Start</div>
+          <div className="admin-stat-value admin-stat-value-sm">{data?.start || '--'}</div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-label">Period End</div>
+          <div className="admin-stat-value admin-stat-value-sm">{data?.end || '--'}</div>
+        </div>
+      </div>
 
-        <div className="report-summary-row">
-          <div className="summary-card summary-primary">
-            <span className="summary-label">Total Visits</span>
-            <strong>{data?.count ?? '--'}</strong>
+      <div className="admin-card">
+        <div className="admin-card-header">
+          <div className="admin-card-title">
+            <h2>Visitor List</h2>
           </div>
-          <div className="summary-card">
-            <span className="summary-label">Unique Visitors</span>
-            <strong>{data ? uniqueVisitors : '--'}</strong>
-          </div>
-          <div className="summary-card">
-            <span className="summary-label">Period Start</span>
-            <strong>{data?.start || '--'}</strong>
-          </div>
-          <div className="summary-card">
-            <span className="summary-label">Period End</span>
-            <strong>{data?.end || '--'}</strong>
-          </div>
+          <span className="admin-card-badge">{data?.students?.length || 0} entries</span>
         </div>
 
         {loading ? (
-          <div className="loading report-loading">Loading report...</div>
+          <div className="admin-loading">Loading report...</div>
         ) : error ? (
-          <div className="no-data report-no-data">{error}</div>
+          <div className="admin-empty-state">{error}</div>
         ) : (
-          <div className="report-table-card">
-            <div className="report-table-header">
-              <h2>{title} — Visitor List</h2>
-              <span className="report-row-count">{data?.students?.length || 0} entries</span>
-            </div>
-            <div className="report-table-scroll">
-              <table className="report-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Name</th>
-                    <th>Phone</th>
-                    <th>Purpose</th>
-                    <th>Campus</th>
-                    <th>Check-in Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data?.students?.length ? (
-                    data.students.map((student, index) => (
-                      <tr key={index}>
-                        <td className="report-index">{index + 1}</td>
-                        <td><strong>{student.name}</strong></td>
-                        <td>{student.phone || '-'}</td>
-                        <td>{student.purpose || '-'}</td>
-                        <td>{student.campus || activeCampus}</td>
-                        <td>{new Date(student.used_at).toLocaleString()}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="6" className="no-data report-no-data">No signups recorded for this range.</td>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Purpose</th>
+                  <th>Campus</th>
+                  <th>Check-in Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data?.students?.length ? (
+                  data.students.map((student, index) => (
+                    <tr key={index}>
+                      <td className="admin-table-index">{index + 1}</td>
+                      <td><strong>{student.name}</strong></td>
+                      <td>{student.phone || '-'}</td>
+                      <td>{student.purpose || '-'}</td>
+                      <td>{student.campus || activeCampus}</td>
+                      <td>{new Date(student.used_at).toLocaleString()}</td>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="6" className="admin-empty-state">No signups recorded for this range.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

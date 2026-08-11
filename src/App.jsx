@@ -4,10 +4,16 @@ import Entrance from './pages/Entrance'
 import AccessQR from './pages/AccessQR'
 import RegisterPage from './pages/RegisterPage'
 import Security from './pages/Security'
-import Admin from './pages/admin/Admin'
 import Home from './pages/Home'
 import CampusSelector from './pages/CampusSelector'
 import RoleGate from './pages/RoleGate'
+import AdminLayout from './pages/admin/AdminLayout'
+import Dashboard from './pages/admin/Dashboard'
+import Residents from './pages/admin/Residents'
+import Visitors from './pages/admin/Visitors'
+import PasswordManager from './pages/admin/PasswordManager'
+import Reports from './pages/admin/Reports'
+import Settings from './pages/admin/Settings'
 import DailySignups from './pages/reports/DailySignups'
 import WeeklySignups from './pages/reports/WeeklySignups'
 import MonthlySignups from './pages/reports/MonthlySignups'
@@ -39,34 +45,23 @@ function App() {
               title="Admin access"
               subtitle="Unlock this campus admin dashboard"
             >
-              <Admin />
+              <AdminLayout />
             </RoleGate>
           )}
-        />
-        <Route
-          path="/reports/daily"
-          element={(
-            <RoleGate role="admin" title="Reports access" subtitle="Unlock admin reports">
-              <DailySignups />
-            </RoleGate>
-          )}
-        />
-        <Route
-          path="/reports/weekly"
-          element={(
-            <RoleGate role="admin" title="Reports access" subtitle="Unlock admin reports">
-              <WeeklySignups />
-            </RoleGate>
-          )}
-        />
-        <Route
-          path="/reports/monthly"
-          element={(
-            <RoleGate role="admin" title="Reports access" subtitle="Unlock admin reports">
-              <MonthlySignups />
-            </RoleGate>
-          )}
-        />
+        >
+          <Route index element={<Dashboard />} />
+          <Route path="residents" element={<Residents />} />
+          <Route path="visitors" element={<Visitors />} />
+          <Route path="security" element={<PasswordManager />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="reports/daily" element={<DailySignups />} />
+          <Route path="reports/weekly" element={<WeeklySignups />} />
+          <Route path="reports/monthly" element={<MonthlySignups />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
+        <Route path="/reports/daily" element={<Navigate to="/admin/reports/daily" replace />} />
+        <Route path="/reports/weekly" element={<Navigate to="/admin/reports/weekly" replace />} />
+        <Route path="/reports/monthly" element={<Navigate to="/admin/reports/monthly" replace />} />
         <Route path="/access" element={<AccessQR />} />
         <Route path="/entrance" element={<Entrance />} />
         <Route path="/" element={<Entrance />} />
