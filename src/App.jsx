@@ -9,7 +9,7 @@ import CampusSelector from './pages/CampusSelector'
 import RoleGate from './pages/RoleGate'
 import AdminLayout from './pages/admin/AdminLayout'
 import Dashboard from './pages/admin/Dashboard'
-import Residents from './pages/admin/Residents'
+import Students from './pages/admin/Students'
 import Visitors from './pages/admin/Visitors'
 import PasswordManager from './pages/admin/PasswordManager'
 import Reports from './pages/admin/Reports'
@@ -50,7 +50,7 @@ function App() {
           )}
         >
           <Route index element={<Dashboard />} />
-          <Route path="residents" element={<Residents />} />
+          <Route path="students" element={<Students />} />
           <Route path="visitors" element={<Visitors />} />
           <Route path="security" element={<PasswordManager />} />
           <Route path="reports" element={<Reports />} />

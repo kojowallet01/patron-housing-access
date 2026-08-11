@@ -12,7 +12,7 @@ import {
 import { API_URL, getCampusAuthHeaders } from '../../config'
 import { useAdminContext } from './AdminLayout'
 
-function Residents() {
+function Students() {
   const { activeCampus, refreshKey } = useAdminContext()
   const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(true)
@@ -27,7 +27,7 @@ function Residents() {
       const data = await res.json()
       setStudents(data.students || [])
     } catch (error) {
-      console.error('Error fetching residents:', error)
+      console.error('Error fetching students:', error)
     } finally {
       setLoading(false)
     }
@@ -118,7 +118,7 @@ function Residents() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `residents-${activeCampus.replace(/\s+/g, '-').toLowerCase()}.csv`
+    link.download = `students-${activeCampus.replace(/\s+/g, '-').toLowerCase()}.csv`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -128,7 +128,7 @@ function Residents() {
   if (loading) {
     return (
       <div className="admin-page-container">
-        <div className="admin-loading-card">Loading residents...</div>
+        <div className="admin-loading-card">Loading students...</div>
       </div>
     )
   }
@@ -137,8 +137,8 @@ function Residents() {
     <div className="admin-page-container">
       <div className="admin-page-heading">
         <div>
-          <h1 className="admin-page-title">Residents</h1>
-          <p className="admin-page-subtitle">All registered residents for {activeCampus}</p>
+          <h1 className="admin-page-title">Students</h1>
+          <p className="admin-page-subtitle">All registered students for {activeCampus}</p>
         </div>
       </div>
 
@@ -154,7 +154,7 @@ function Residents() {
             />
           </div>
           <div className="admin-toolbar-actions">
-            <span className="admin-row-count">{filteredStudents.length} residents</span>
+            <span className="admin-row-count">{filteredStudents.length} students</span>
             <button type="button" className="admin-btn admin-btn-outline" onClick={exportCSV}>
               <Download size={16} strokeWidth={2} />
               Export CSV
@@ -165,7 +165,7 @@ function Residents() {
         {filteredStudents.length === 0 ? (
           <div className="admin-empty-state">
             <Users size={32} strokeWidth={1.5} />
-            <p>{searchTerm ? 'No matching residents found' : 'No residents registered yet'}</p>
+            <p>{searchTerm ? 'No matching students found' : 'No students registered yet'}</p>
           </div>
         ) : (
           <div className="admin-table-scroll">
@@ -231,4 +231,4 @@ function Residents() {
   )
 }
 
-export default Residents
+export default Students

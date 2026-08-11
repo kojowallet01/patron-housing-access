@@ -219,7 +219,7 @@ function RegisterPage() {
       </div>
 
       <div className="mobile-content">
-        <h2>📝 Resident Registration</h2>
+        <h2>📝 Student Registration</h2>
         <p className="subtitle">Fill in your details to get your building access token instantly.</p>
 
         {statusMessage && (

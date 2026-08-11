@@ -312,7 +312,7 @@ function Admin() {
             <div className="stats-grid">
               <div className="stat-card stat-primary">
                 <div className="stat-value">{stats.totalStudents}</div>
-                <div className="stat-label">Total Residents</div>
+                <div className="stat-label">Total Students</div>
               </div>
               <div className="stat-card stat-success">
                 <div className="stat-value">{stats.todayVisits}</div>
@@ -399,7 +399,7 @@ function Admin() {
                   className={`tab ${view === 'all' ? 'active' : ''}`}
                   onClick={() => setView('all')}
                 >
-                  All Residents ({allStudents.length})
+                  All Students ({allStudents.length})
                 </button>
               </div>
 
@@ -431,7 +431,7 @@ function Admin() {
                 {view === 'all' && (
                   <button
                     className="btn btn-secondary btn-small"
-                    onClick={() => exportCSV(allStudents, `residents-${activeCampus.replace(/\s+/g, '-').toLowerCase()}.csv`, [
+                    onClick={() => exportCSV(allStudents, `students-${activeCampus.replace(/\s+/g, '-').toLowerCase()}.csv`, [
                       { key: 'name', label: 'Name' },
                       { key: 'phone', label: 'Phone' },
                       { key: 'purpose', label: 'Purpose' },
@@ -482,10 +482,10 @@ function Admin() {
 
             {view === 'all' && (
               <div className="data-table">
-                <h3>All Registered Residents</h3>
+                <h3>All Registered Students</h3>
                 {filteredStudents.length === 0 ? (
                   <div className="no-data">
-                    {searchTerm ? 'No matching residents found' : 'No residents registered'}
+                    {searchTerm ? 'No matching students found' : 'No students registered'}
                   </div>
                 ) : (
                   <table>
@@ -546,7 +546,7 @@ function Admin() {
         <div className="modal-overlay" onClick={() => setShowAddForm(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>Add Visitor to {activeCampus}</h3>
-            <p className="modal-subtitle">Add a resident or visitor without the QR registration flow.</p>
+            <p className="modal-subtitle">Add a student or visitor without the QR registration flow.</p>
 
             <form onSubmit={handleAddVisitor}>
               <div className="form-group">

@@ -21,7 +21,7 @@ export const AdminContext = React.createContext(null)
 
 const NAV_ITEMS = [
   { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { path: '/admin/residents', label: 'Residents', icon: Users, end: false },
+  { path: '/admin/students', label: 'Students', icon: Users, end: false },
   { path: '/admin/visitors', label: 'Visitors', icon: UserCheck, end: false },
   { path: '/admin/security', label: 'Security', icon: ShieldCheck, end: false },
   { path: '/admin/reports', label: 'Reports', icon: BarChart3, end: false },

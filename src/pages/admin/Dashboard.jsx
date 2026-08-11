@@ -57,7 +57,7 @@ function Dashboard() {
   }, [fetchData])
 
   const statCards = [
-    { label: 'Total Residents', value: stats?.totalStudents ?? '--', icon: Users, tone: 'indigo' },
+    { label: 'Total Students', value: stats?.totalStudents ?? '--', icon: Users, tone: 'indigo' },
     { label: "Today's Visits", value: stats?.todayVisits ?? '--', icon: DoorOpen, tone: 'emerald' },
     { label: 'This Week', value: stats?.thisWeekVisits ?? '--', icon: CalendarDays, tone: 'amber' },
     { label: 'This Month', value: stats?.thisMonthVisits ?? '--', icon: CalendarRange, tone: 'sky' },

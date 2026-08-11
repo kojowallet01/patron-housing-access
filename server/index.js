@@ -917,7 +917,7 @@ app.post('/api/admin/students/:id/flag', requireAdminAuth, async (req, res) => {
 
     await updateStudentFlag(student.id, flagged, note);
 
-    res.json({ success: true, message: flagged ? 'Resident flagged' : 'Flag removed', studentId: student.id });
+    res.json({ success: true, message: flagged ? 'Student flagged' : 'Flag removed', studentId: student.id });
   } catch (error) {
     console.error('Flag student error:', error);
     res.status(500).json({ error: 'Failed to update flag' });

@@ -428,7 +428,7 @@ function Visitors() {
         <div className="modal-overlay" onClick={() => setShowAddForm(false)}>
           <div className="modal admin-modal" onClick={(e) => e.stopPropagation()}>
             <h3>Add Visitor to {activeCampus}</h3>
-            <p className="modal-subtitle">Add a resident or visitor without the QR registration flow.</p>
+            <p className="modal-subtitle">Add a student or visitor without the QR registration flow.</p>
 
             <form onSubmit={handleAddVisitor}>
               <div className="form-group">

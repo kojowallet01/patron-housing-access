@@ -84,7 +84,7 @@ function Settings() {
             </div>
           </div>
           <p className="admin-settings-about">
-            Patron Housing Access Admin — manage residents, visitors, and security access across your
+            Patron Housing Access Admin — manage students, visitors, and security access across your
             campuses. Report issues or request features at the front desk.
           </p>
           <span className="admin-settings-version">Version 2.0</span>

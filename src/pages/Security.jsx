@@ -157,8 +157,8 @@ function Security() {
       <div className="security-content">
         {!result ? (
           <div className="verify-input-section">
-            <h2>Verify Resident Access Token</h2>
-            <p className="instruction">Scan the resident's QR code, or enter the access code manually below.</p>
+            <h2>Verify Student Access Token</h2>
+            <p className="instruction">Scan the student's QR code, or enter the access code manually below.</p>
 
             <div className="manual-entry">
               <label htmlFor="token-digit-0" className="token-label">Or enter the 4-digit code manually</label>
@@ -206,7 +206,7 @@ function Security() {
             )}
 
             <div className="security-tip">
-              <p>💡 You can use the camera to scan the resident's token, or type the 4-digit code into the boxes above.</p>
+              <p>💡 You can use the camera to scan the student's token, or type the 4-digit code into the boxes above.</p>
             </div>
           </div>
         ) : (
