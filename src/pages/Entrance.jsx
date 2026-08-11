@@ -27,8 +27,10 @@ function Entrance() {
               onClick={() => handleCampusSelect(campus)}
               className="campus-box entrance-campus-box"
               style={{
-                borderColor: CAMPUS_COLORS[campus] || '#2563eb',
-                background: `${CAMPUS_COLORS[campus]}0d`
+                background: CAMPUS_COLORS[campus] || '#2563eb',
+                color: '#ffffff',
+                borderColor: 'transparent',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
               }}
             >
               <span>{campus.replace(' CAMPUS', '')}</span>

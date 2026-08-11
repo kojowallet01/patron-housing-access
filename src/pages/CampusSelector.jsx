@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, getSelectedCampus, setSelectedCampus } from '../config'
+import { CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, CAMPUS_COLORS, getSelectedCampus, setSelectedCampus } from '../config'
 import { validateSession } from '../auth'
 
 function CampusSelector() {
@@ -34,11 +34,16 @@ function CampusSelector() {
       </div>
 
       <div className="home-content">
-        <div className="page-grid">
+        <div className="page-grid campus-picker-grid">
           {CAMPUS_LIST.map((campus) => (
             <div
               key={campus}
-              className={`page-card ${selectedCampus === campus ? 'selected-campus' : ''}`}
+              className={`page-card campus-picker-card ${selectedCampus === campus ? 'selected-campus' : ''}`}
+              style={{
+                background: CAMPUS_COLORS[campus] || '#2563eb',
+                color: '#ffffff',
+                borderColor: 'transparent'
+              }}
               onClick={() => handleSelect(campus)}
             >
               <div className="page-icon">📍</div>

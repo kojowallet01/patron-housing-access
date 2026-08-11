@@ -116,8 +116,10 @@ function RoleGate({ role, title, subtitle, children }) {
                 onClick={() => handleCampusSelect(campus)}
                 className={`campus-box${isSelected ? ' selected' : ''}`}
                 style={{
-                  borderColor: isSelected ? (CAMPUS_COLORS[campus] || '#2563eb') : undefined,
-                  background: isSelected ? `${CAMPUS_COLORS[campus]}14` : '#ffffff'
+                  background: CAMPUS_COLORS[campus] || '#2563eb',
+                  color: '#ffffff',
+                  borderColor: isSelected ? '#ffffff' : 'transparent',
+                  boxShadow: isSelected ? '0 0 0 3px rgba(255,255,255,0.9), 0 4px 12px rgba(0,0,0,0.2)' : '0 4px 12px rgba(0, 0, 0, 0.15)'
                 }}
               >
                 <span>{campus.replace(' CAMPUS', '')}</span>
