@@ -7,6 +7,12 @@ const ALLOWED_ROLES = {
   security: ['security', 'super-admin']
 }
 
+const ROLE_OPTIONS = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'security', label: 'Security' },
+  { value: 'super-admin', label: 'Super Admin' }
+]
+
 function RoleGate({ role, title, subtitle, children }) {
   const [selectedRole, setSelectedRole] = useState(role || 'admin')
   const [selectedCampus, setSelected] = useState(getSelectedCampus())
@@ -98,7 +104,7 @@ function RoleGate({ role, title, subtitle, children }) {
         <p>{title}</p>
       </div>
 
-      <div className="home-content" style={{ maxWidth: 820 }}>
+      <div className="home-content" style={{ maxWidth: 720 }}>
         <div className="page-card" style={{ padding: '2rem' }}>
           <h3>{subtitle}</h3>
           <p style={{ marginTop: 8 }}>Choose your campus first, then enter your login details.</p>
@@ -136,9 +142,9 @@ function RoleGate({ role, title, subtitle, children }) {
                 className="security-input"
                 style={{ width: '100%' }}
               >
-                {(ALLOWED_ROLES[role] || [role]).map((r) => (
-                  <option key={r} value={r}>
-                    {r === 'super-admin' ? 'Super Admin' : r.charAt(0).toUpperCase() + r.slice(1)}
+                {ROLE_OPTIONS.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
                   </option>
                 ))}
               </select>
@@ -167,7 +173,7 @@ function RoleGate({ role, title, subtitle, children }) {
           )}
 
           <button className="btn btn-primary" style={{ marginTop: 20, width: '100%' }} onClick={handleUnlock}>
-            Unlock {selectedRole.toUpperCase().replace('-', ' ')} Dashboard
+            Unlock ADMIN Dashboard
           </button>
         </div>
       </div>

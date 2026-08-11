@@ -1512,10 +1512,14 @@ tr:hover {
 .role-gate-page {
   background: #ffffff;
   color: #1f2937;
+  justify-content: center;
+  align-items: center;
 }
 
 .role-gate-page .home-header {
-  padding: 56px 20px 12px;
+  width: 100%;
+  max-width: 720px;
+  padding: 24px 20px 0;
 }
 
 .role-gate-page .home-header h1 {
@@ -1528,7 +1532,11 @@ tr:hover {
 }
 
 .role-gate-page .home-content {
-  padding: 24px 20px 56px;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 720px;
+  padding: 24px 20px 40px;
+  align-items: stretch;
 }
 
 .role-gate-page .page-card {
@@ -1537,8 +1545,6 @@ tr:hover {
   border: 1px solid #e5e7eb;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   width: 100%;
-  max-width: 720px;
-  margin: 0 auto;
   text-align: center;
 }
 
