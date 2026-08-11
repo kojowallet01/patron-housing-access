@@ -204,6 +204,18 @@ try {
   // column already exists
 }
 
+try {
+  db.prepare('ALTER TABLE students ADD COLUMN flagged INTEGER NOT NULL DEFAULT 0').run();
+} catch (error) {
+  // column already exists
+}
+
+try {
+  db.prepare('ALTER TABLE students ADD COLUMN flag_note TEXT').run();
+} catch (error) {
+  // column already exists
+}
+
 db.prepare(`CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   role TEXT NOT NULL,
@@ -699,7 +711,9 @@ app.post('/api/verify-token', requireSecurityAuth, (req, res) => {
         name: student.name,
         phone: student.phone,
         purpose: student.purpose,
-        campus: student.campus
+        campus: student.campus,
+        flagged: Boolean(student.flagged),
+        flagNote: student.flag_note || ''
       },
       validDate: tokenData.valid_date,
       campus: tokenData.campus,
@@ -978,6 +992,123 @@ app.get('/api/admin/visits', requireAdminAuth, async (req, res) => {
   } catch (error) {
     console.error('Visits query error:', error);
     res.status(500).json({ error: 'Failed to fetch visit data' });
+  }
+});
+
+app.get('/api/admin/analytics', requireAdminAuth, (req, res) => {
+  try {
+    const { range = 'day' } = req.query;
+    const period = getPeriodRange(range);
+
+    const campusFilter = req.isSuperAdmin ? '' : 'AND t.campus = ?';
+    const params = req.isSuperAdmin ? [period.start, period.end] : [req.userCampus, period.start, period.end];
+
+    const visitors = db.prepare(
+      `SELECT t.*, s.name, s.phone, s.purpose
+       FROM access_tokens t
+       JOIN students s ON t.student_id = s.id
+       WHERE t.verified_at IS NOT NULL AND date(t.verified_at) BETWEEN ? AND ? ${campusFilter}`
+    ).all(...params);
+
+    const peakHours = Array(24).fill(0);
+    const purposeCounts = {};
+    const visitorCounts = {};
+    visitors.forEach(v => {
+      const hour = new Date(v.verified_at).getHours();
+      peakHours[hour] += 1;
+
+      const purpose = v.purpose || 'Not specified';
+      purposeCounts[purpose] = (purposeCounts[purpose] || 0) + 1;
+
+      visitorCounts[v.student_id] = (visitorCounts[v.student_id] || 0) + 1;
+    });
+
+    const uniqueVisitors = Object.keys(visitorCounts).length;
+    const returningVisitors = Object.values(visitorCounts).filter(count => count > 1).length;
+
+    const newStudentsQuery = req.isSuperAdmin
+      ? 'SELECT COUNT(*) as count FROM students WHERE date(created_at) BETWEEN ? AND ?'
+      : 'SELECT COUNT(*) as count FROM students WHERE campus = ? AND date(created_at) BETWEEN ? AND ?';
+    const newStudentsParams = req.isSuperAdmin
+      ? [period.start, period.end]
+      : [req.userCampus, period.start, period.end];
+    const newStudents = db.prepare(newStudentsQuery).get(...newStudentsParams).count;
+
+    const purposes = Object.entries(purposeCounts)
+      .map(([purpose, count]) => ({ purpose, count }))
+      .sort((a, b) => b.count - a.count);
+
+    res.json({
+      range,
+      start: period.start,
+      end: period.end,
+      totalVisits: visitors.length,
+      uniqueVisitors,
+      returningVisitors,
+      newStudents,
+      peakHours,
+      purposes
+    });
+  } catch (error) {
+    console.error('Analytics query error:', error);
+    res.status(500).json({ error: 'Failed to fetch analytics data' });
+  }
+});
+
+app.post('/api/admin/students', requireAdminAuth, (req, res) => {
+  try {
+    const { name, phone, purpose, campus } = req.body || {};
+    const campusName = resolveCampusName(campus || req.userCampus || DEFAULT_CAMPUS);
+
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+    if (!phone || !validatePhone(phone)) {
+      return res.status(400).json({ error: 'Valid phone number is required' });
+    }
+
+    const existing = db.prepare('SELECT * FROM students WHERE phone = ? AND campus = ?').get(phone.trim(), campusName);
+    if (existing) {
+      return res.status(400).json({ error: 'Phone already registered for this campus' });
+    }
+
+    const student = {
+      id: uuidv4(),
+      name: name.trim(),
+      phone: phone.trim(),
+      purpose: (purpose || '').trim(),
+      campus: campusName,
+      created_at: new Date().toISOString(),
+      flagged: 0,
+      flag_note: ''
+    };
+
+    db.prepare(`INSERT INTO students (id, name, phone, purpose, campus, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(student.id, student.name, student.phone, student.purpose, student.campus, student.created_at);
+
+    res.json({ success: true, message: 'Visitor added successfully', student });
+  } catch (error) {
+    console.error('Add student error:', error);
+    res.status(500).json({ error: 'Failed to add visitor' });
+  }
+});
+
+app.post('/api/admin/students/:id/flag', requireAdminAuth, (req, res) => {
+  try {
+    const { flagged, note } = req.body || {};
+    const student = db.prepare('SELECT * FROM students WHERE id = ?').get(req.params.id);
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    db.prepare('UPDATE students SET flagged = ?, flag_note = ? WHERE id = ?')
+      .run(flagged ? 1 : 0, (note || '').trim(), student.id);
+
+    res.json({ success: true, message: flagged ? 'Resident flagged' : 'Flag removed', studentId: student.id });
+  } catch (error) {
+    console.error('Flag student error:', error);
+    res.status(500).json({ error: 'Failed to update flag' });
   }
 });
 

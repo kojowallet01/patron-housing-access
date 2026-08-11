@@ -139,7 +139,15 @@ function Security() {
               <div className="result-granted">
                 <div className="result-icon">✅</div>
                 <h2>ACCESS GRANTED</h2>
-                
+
+                {result.student.flagged && (
+                  <div className="flag-warning">
+                    <div className="flag-warning-icon">⚠️</div>
+                    <div className="flag-warning-title">FLAGGED RESIDENT</div>
+                    <div className="flag-warning-note">{result.student.flagNote || 'No reason given'}</div>
+                  </div>
+                )}
+
                 <div className="student-info">
                   <div className="info-row">
                     <span className="label">Name:</span>

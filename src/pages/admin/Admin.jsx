@@ -4,6 +4,7 @@ import { validateSession } from '../../auth'
 import ReportLinks from './ReportLinks'
 import RecentActivity from './RecentActivity'
 import StatusCard from './StatusCard'
+import Analytics from './Analytics'
 
 function Admin() {
   const campus = getSelectedCampus()
@@ -22,10 +23,16 @@ function Admin() {
   const [draftPasswords, setDraftPasswords] = useState({})
   const [credentialMessage, setCredentialMessage] = useState('')
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [analyticsRange, setAnalyticsRange] = useState('day')
+  const [analytics, setAnalytics] = useState(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [addForm, setAddForm] = useState({ name: '', phone: '', purpose: '' })
+  const [addMessage, setAddMessage] = useState({ type: '', text: '' })
 
   useEffect(() => {
     fetchData()
     fetchVisitRange('day')
+    fetchAnalytics('day')
   }, [])
 
   useEffect(() => {
@@ -48,9 +55,10 @@ function Admin() {
     const interval = setInterval(() => {
       fetchData()
       fetchVisitRange(visitsRange)
+      fetchAnalytics(analyticsRange)
     }, 5000)
     return () => clearInterval(interval)
-  }, [visitsRange])
+  }, [visitsRange, analyticsRange])
 
   const fetchData = async () => {
     try {
@@ -114,6 +122,99 @@ function Admin() {
       })
     } catch (error) {
       console.error('Error fetching credential map:', error)
+    }
+  }
+
+  const fetchAnalytics = async (range = 'day') => {
+    try {
+      const authHeaders = getCampusAuthHeaders('admin')
+      const response = await fetch(`${API_URL}/admin/analytics?range=${range}&campus=${encodeURIComponent(campus)}`, { headers: authHeaders })
+      if (!response.ok) return
+      const data = await response.json()
+      setAnalytics(data)
+    } catch (error) {
+      console.error('Error fetching analytics:', error)
+    }
+  }
+
+  const handleAnalyticsRange = (range) => {
+    setAnalyticsRange(range)
+    fetchAnalytics(range)
+  }
+
+  const exportCSV = (rows, filename, columns) => {
+    const header = columns.map(c => c.label).join(',')
+    const body = rows.map(row =>
+      columns.map(c => {
+        const value = row[c.key] ?? ''
+        const escaped = String(value).replace(/"/g, '""')
+        return `"${escaped}"`
+      }).join(',')
+    ).join('\n')
+
+    const blob = new Blob([`${header}\n${body}`], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleAddVisitor = async (e) => {
+    e.preventDefault()
+    setAddMessage({ type: '', text: '' })
+
+    if (!addForm.name.trim() || !addForm.phone.trim() || !addForm.purpose.trim()) {
+      setAddMessage({ type: 'error', text: 'Name, phone and purpose are required.' })
+      return
+    }
+
+    try {
+      const authHeaders = getCampusAuthHeaders('admin')
+      const response = await fetch(`${API_URL}/admin/students`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ ...addForm, campus })
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        setAddMessage({ type: 'error', text: data.error || 'Failed to add visitor.' })
+        return
+      }
+
+      setAddMessage({ type: 'success', text: `${addForm.name} added to ${campus}.` })
+      setAddForm({ name: '', phone: '', purpose: '' })
+      setShowAddForm(false)
+      fetchData()
+    } catch (error) {
+      console.error('Error adding visitor:', error)
+      setAddMessage({ type: 'error', text: 'Unable to add visitor right now.' })
+    }
+  }
+
+  const handleFlag = async (student, flagged, note) => {
+    try {
+      const authHeaders = getCampusAuthHeaders('admin')
+      const response = await fetch(`${API_URL}/admin/students/${student.id}/flag`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ flagged, note })
+      })
+
+      if (!response.ok) throw new Error('Flag update failed')
+      fetchData()
+    } catch (error) {
+      console.error('Error updating flag:', error)
     }
   }
 
@@ -265,6 +366,8 @@ function Admin() {
               </div>
             )}
 
+            <Analytics analytics={analytics} range={analyticsRange} onRangeChange={handleAnalyticsRange} />
+
             <div className="admin-controls">
               <div className="view-tabs">
                 <button
@@ -289,6 +392,40 @@ function Admin() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="search-input"
                 />
+              </div>
+
+              <div className="table-actions">
+                {view === 'today' && (
+                  <button
+                    className="btn btn-secondary btn-small"
+                    onClick={() => exportCSV(todayVisitors, `visitors-${new Date().toISOString().split('T')[0]}.csv`, [
+                      { key: 'name', label: 'Name' },
+                      { key: 'phone', label: 'Phone' },
+                      { key: 'purpose', label: 'Purpose' },
+                      { key: 'campus', label: 'Campus' },
+                      { key: 'used_at', label: 'Entry Time' }
+                    ])}
+                  >
+                    ⬇ Export CSV
+                  </button>
+                )}
+                {view === 'all' && (
+                  <button
+                    className="btn btn-secondary btn-small"
+                    onClick={() => exportCSV(allStudents, `residents-${campus.replace(/\s+/g, '-').toLowerCase()}.csv`, [
+                      { key: 'name', label: 'Name' },
+                      { key: 'phone', label: 'Phone' },
+                      { key: 'purpose', label: 'Purpose' },
+                      { key: 'campus', label: 'Campus' },
+                      { key: 'created_at', label: 'Registered' }
+                    ])}
+                  >
+                    ⬇ Export CSV
+                  </button>
+                )}
+                <button className="btn btn-primary btn-small" onClick={() => setShowAddForm(true)}>
+                  ➕ Add Visitor
+                </button>
               </div>
             </div>
 
@@ -339,15 +476,36 @@ function Admin() {
                         <th>Phone</th>
                         <th>Purpose</th>
                         <th>Registered</th>
+                        <th>Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredStudents.map((student) => (
-                        <tr key={student.id}>
-                          <td><strong>{student.name}</strong></td>
+                        <tr key={student.id} className={student.flagged ? 'row-flagged' : ''}>
+                          <td>
+                            <strong>{student.name}</strong>
+                            {student.flagged && <span className="flag-badge">⚠️ Flagged</span>}
+                          </td>
                           <td>{student.phone || '-'}</td>
                           <td>{student.purpose || '-'}</td>
                           <td>{new Date(student.created_at).toLocaleString()}</td>
+                          <td>
+                            {student.flagged ? (
+                              <button className="btn btn-small btn-warning" onClick={() => handleFlag(student, false, '')}>
+                                Clear Flag
+                              </button>
+                            ) : (
+                              <button
+                                className="btn btn-small btn-secondary"
+                                onClick={() => {
+                                  const note = window.prompt(`Flag ${student.name} — reason:`) || ''
+                                  handleFlag(student, true, note)
+                                }}
+                              >
+                                Flag
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -364,6 +522,63 @@ function Admin() {
           </div>
         </div>
       </div>
+
+      {showAddForm && (
+        <div className="modal-overlay" onClick={() => setShowAddForm(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Add Visitor to {campus}</h3>
+            <p className="modal-subtitle">Add a resident or visitor without the QR registration flow.</p>
+
+            <form onSubmit={handleAddVisitor}>
+              <div className="form-group">
+                <label>Full Name</label>
+                <input
+                  type="text"
+                  value={addForm.name}
+                  onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+                  placeholder="e.g. Kwame Mensah"
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Phone</label>
+                <input
+                  type="text"
+                  value={addForm.phone}
+                  onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
+                  placeholder="e.g. 0244123456"
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Purpose</label>
+                <input
+                  type="text"
+                  value={addForm.purpose}
+                  onChange={(e) => setAddForm({ ...addForm, purpose: e.target.value })}
+                  placeholder="e.g. Student, Visitor, Staff"
+                  required
+                />
+              </div>
+
+              {addMessage.text && (
+                <div className={`alert ${addMessage.type === 'error' ? 'alert-error' : 'alert-success'}`}>
+                  {addMessage.text}
+                </div>
+              )}
+
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowAddForm(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Add Visitor
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
