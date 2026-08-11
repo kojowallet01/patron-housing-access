@@ -30,7 +30,24 @@ function RegisterPage() {
     }
 
     if (campusParam) {
-      setCampusCode(campusParam)
+      setCampusName(decodeURIComponent(campusParam))
+      fetch(`${API_URL}/campus-qr?campus=${encodeURIComponent(decodeURIComponent(campusParam))}`)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error('Failed to resolve campus code')
+          }
+          return response.json()
+        })
+        .then((data) => {
+          if (data?.code) {
+            setCampusCode(data.code)
+          } else {
+            setError('Invalid registration link. Please scan the QR code at the entrance.')
+          }
+        })
+        .catch(() => {
+          setError('Invalid registration link. Please scan the QR code at the entrance.')
+        })
       return
     }
 
