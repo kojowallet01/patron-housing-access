@@ -1508,6 +1508,41 @@ tr:hover {
   color: white;
 }
 
+/* ===== LOGIN / ROLE GATE PAGE (white) ===== */
+.role-gate-page {
+  background: #ffffff;
+  color: #1f2937;
+}
+
+.role-gate-page .home-header {
+  padding: 56px 20px 12px;
+}
+
+.role-gate-page .home-header h1 {
+  color: #111827;
+}
+
+.role-gate-page .home-header p {
+  color: #4b5563;
+  opacity: 1;
+}
+
+.role-gate-page .home-content {
+  padding: 24px 20px 56px;
+}
+
+.role-gate-page .page-card {
+  cursor: default;
+  min-height: 0;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  width: 100%;
+}
+
+.role-gate-page .campus-card {
+  border: 3px solid rgba(255, 255, 255, 0.25);
+}
+
 .home-header {
   text-align: center;
   padding: 44px 20px 8px;

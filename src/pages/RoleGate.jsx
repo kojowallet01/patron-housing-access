@@ -92,7 +92,7 @@ function RoleGate({ role, title, subtitle, children }) {
   }
 
   return (
-    <div className="fullscreen-container home-page">
+    <div className="fullscreen-container role-gate-page">
       <div className="home-header">
         <h1>🏛️ {CAMPUS_INSTITUTE_NAME}</h1>
         <p>{title}</p>
