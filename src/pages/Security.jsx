@@ -115,25 +115,31 @@ function Security() {
         {!result ? (
           <div className="verify-input-section">
             <h2>Verify Resident Access Token</h2>
-            <p className="instruction">Scan or enter the resident's token below</p>
-            
-            <div className="token-input-group">
-              <input
-                type="text"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Enter token or scan QR code"
-                className="security-input"
-                autoFocus
-              />
-              <button 
-                className="btn btn-verify" 
-                onClick={() => handleVerify()}
-                disabled={verifying || !token}
-              >
-                {verifying ? '⏳ Verifying...' : '✓ Verify'}
-              </button>
+            <p className="instruction">Scan the resident's QR code, or enter the access code manually below.</p>
+
+            <div className="manual-entry">
+              <label htmlFor="token-input" className="token-label">Or enter the code manually</label>
+              <div className="token-input-group">
+                <input
+                  id="token-input"
+                  type="text"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Enter access code"
+                  className="security-input"
+                  autoFocus
+                  autoComplete="off"
+                  spellCheck="false"
+                />
+                <button
+                  className="btn btn-verify"
+                  onClick={() => handleVerify()}
+                  disabled={verifying || !token}
+                >
+                  {verifying ? '⏳ Verifying...' : '✓ Verify'}
+                </button>
+              </div>
             </div>
 
             <div className="scan-toggle">
@@ -150,7 +156,7 @@ function Security() {
             )}
 
             <div className="security-tip">
-              <p>💡 You can also use a QR scanner to read the student's token</p>
+              <p>💡 You can use the camera to scan the resident's token, or type it in manually above.</p>
             </div>
           </div>
         ) : (
