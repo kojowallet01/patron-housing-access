@@ -1208,32 +1208,28 @@ tr:hover {
 
 /* ===== LOGO STYLES ===== */
 .page-logo {
-  height: 100px;
+  height: 110px;
   margin-bottom: 20px;
-  background: black;
-  padding: 15px;
-  border-radius: 12px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  object-fit: contain;
 }
 
 .page-logo-small {
-  height: 60px;
+  height: 70px;
   margin-bottom: 15px;
+  object-fit: contain;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
 .mobile-logo {
-  height: 60px;
+  height: 70px;
   margin-bottom: 10px;
+  object-fit: contain;
 }
 
 .admin-logo {
-  height: 50px;
+  height: 60px;
   margin-right: 20px;
-  background: black;
-  padding: 10px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  object-fit: contain;
 }
 
 .admin-header-left {
@@ -1251,21 +1247,19 @@ tr:hover {
 @media (max-width: 768px) {
   .page-logo {
     height: 80px;
-    padding: 12px;
   }
   
   .page-logo-small {
-    height: 50px;
+    height: 55px;
   }
   
   .mobile-logo {
-    height: 50px;
+    height: 55px;
   }
   
   .admin-logo {
-    height: 40px;
+    height: 45px;
     margin-right: 10px;
-    padding: 8px;
   }
   
   .admin-header-left {
