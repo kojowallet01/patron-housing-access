@@ -30,16 +30,16 @@ function Dashboard() {
   const fetchData = useCallback(async () => {
     try {
       const authHeaders = getCampusAuthHeaders(activeCampus)
-      const [statsRes, todayRes] = await Promise.all([
+      const [statsRes, visitsRes] = await Promise.all([
         fetch(`${API_URL}/admin/stats`, { headers: authHeaders }),
-        fetch(`${API_URL}/admin/today`, { headers: authHeaders })
+        fetch(`${API_URL}/admin/visits?range=all`, { headers: authHeaders })
       ])
 
       const statsData = await statsRes.json()
-      const todayData = await todayRes.json()
+      const visitsData = await visitsRes.json()
 
       setStats(statsData)
-      setRecentActivity((todayData.students || []).slice(0, 10))
+      setRecentActivity((visitsData.students || []).slice(0, 10))
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
     } finally {
@@ -195,7 +195,7 @@ function Dashboard() {
               {recentActivity.length === 0 ? (
                 <div className="admin-empty-state">
                   <CheckCircle2 size={28} strokeWidth={1.5} />
-                  <p>No check-ins yet today</p>
+                  <p>No check-ins recorded yet</p>
                   <p className="admin-empty-state-sub">Visitors will appear here as they sign in.</p>
                 </div>
               ) : (

@@ -190,6 +190,10 @@ function formatDate(date) {
 function getPeriodRange(range) {
   const now = new Date();
   const today = formatDate(now);
+  if (range === 'all') {
+    return { start: '1970-01-01', end: today };
+  }
+
   if (range === 'week') {
     const firstDay = new Date(now);
     firstDay.setDate(now.getDate() - now.getDay());
