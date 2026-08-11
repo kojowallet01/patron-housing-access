@@ -33,7 +33,7 @@ const CAMPUS_TOKEN_STORAGE_KEYS = {
 };
 const ALLOW_UNAUTHENTICATED = process.env.ALLOW_UNAUTHENTICATED === 'true';
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-const ACCESS_TOKEN_PATTERN = /^[A-Z0-9]{6}$/;
+const ACCESS_TOKEN_PATTERN = /^\d{4}$/;
 
 function parseTokenMap(rawValue) {
   if (!rawValue) return {};
@@ -277,10 +277,9 @@ function setSetting(key, value) {
 }
 
 function generateAccessToken() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let token = '';
-  for (let i = 0; i < 6; i += 1) {
-    token += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < 4; i += 1) {
+    token += Math.floor(Math.random() * 10);
   }
   return token;
 }
@@ -713,7 +712,7 @@ app.post('/api/verify-token', requireSecurityAuth, (req, res) => {
     const campusName = resolveCampusName(campus || req.userCampus || DEFAULT_CAMPUS);
     const normalizedToken = String(token || '').trim().toUpperCase();
     if (!ACCESS_TOKEN_PATTERN.test(normalizedToken)) {
-      return res.status(400).json({ valid: false, error: 'Token must be a 6-character code' });
+      return res.status(400).json({ valid: false, error: 'Token must be a 4-digit code' });
     }
 
     const today = currentDateString();
