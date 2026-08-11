@@ -28,7 +28,8 @@ const CAMPUS_ADMIN_TOKENS = parseTokenMap(process.env.CAMPUS_ADMIN_TOKENS || '')
 const CAMPUS_SECURITY_TOKENS = parseTokenMap(process.env.CAMPUS_SECURITY_TOKENS || '');
 const CAMPUS_TOKEN_STORAGE_KEYS = {
   admin: 'campus_admin_tokens',
-  security: 'campus_security_tokens'
+  security: 'campus_security_tokens',
+  'super-admin': 'campus_super_admin_tokens'
 };
 const ALLOW_UNAUTHENTICATED = process.env.ALLOW_UNAUTHENTICATED === 'true';
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -96,8 +97,19 @@ function readStoredCampusTokenMap(role) {
 function getCampusRoleToken(campusName, role) {
   const normalizedCampus = resolveCampusName(campusName);
   const storedMap = readStoredCampusTokenMap(role);
-  const envMap = role === 'admin' ? CAMPUS_ADMIN_TOKENS : CAMPUS_SECURITY_TOKENS;
-  return storedMap[normalizedCampus] || envMap[normalizedCampus] || (role === 'admin' ? ADMIN_TOKEN : SECURITY_TOKEN) || '';
+  if (storedMap[normalizedCampus]) {
+    return storedMap[normalizedCampus];
+  }
+  if (role === 'admin') {
+    return CAMPUS_ADMIN_TOKENS[normalizedCampus] || ADMIN_TOKEN || '';
+  }
+  if (role === 'security') {
+    return CAMPUS_SECURITY_TOKENS[normalizedCampus] || SECURITY_TOKEN || '';
+  }
+  if (role === 'super-admin') {
+    return SUPER_ADMIN_TOKEN || '';
+  }
+  return '';
 }
 
 function setCampusRoleToken(campusName, role, password) {
@@ -309,7 +321,8 @@ function hasConfiguredAdminAuth(campus) {
   return Boolean(
     SUPER_ADMIN_TOKEN ||
     ADMIN_TOKEN ||
-    getCampusRoleToken(campus, 'admin')
+    getCampusRoleToken(campus, 'admin') ||
+    getCampusRoleToken(campus, 'super-admin')
   );
 }
 
@@ -317,7 +330,8 @@ function hasConfiguredSecurityAuth(campus) {
   return Boolean(
     SUPER_ADMIN_TOKEN ||
     SECURITY_TOKEN ||
-    getCampusRoleToken(campus, 'security')
+    getCampusRoleToken(campus, 'security') ||
+    getCampusRoleToken(campus, 'super-admin')
   );
 }
 
@@ -340,7 +354,8 @@ function requireAdminAuth(req, res, next) {
 
   const token = req.get('x-admin-token') || req.get('x-super-admin-token') || '';
   const campusAdminToken = getCampusRoleToken(campus, 'admin');
-  const superAdminMatches = SUPER_ADMIN_TOKEN && isMatchingToken(token, SUPER_ADMIN_TOKEN);
+  const campusSuperAdminToken = getCampusRoleToken(campus, 'super-admin');
+  const superAdminMatches = campusSuperAdminToken && isMatchingToken(token, campusSuperAdminToken);
   const campusAdminMatches = campusAdminToken && isMatchingToken(token, campusAdminToken);
 
   if (superAdminMatches || campusAdminMatches) {
@@ -377,7 +392,8 @@ function requireSecurityAuth(req, res, next) {
 
   const token = req.get('x-security-token') || req.get('x-super-admin-token') || '';
   const campusSecurityToken = getCampusRoleToken(campus, 'security');
-  const superAdminMatches = SUPER_ADMIN_TOKEN && isMatchingToken(token, SUPER_ADMIN_TOKEN);
+  const campusSuperAdminToken = getCampusRoleToken(campus, 'super-admin');
+  const superAdminMatches = campusSuperAdminToken && isMatchingToken(token, campusSuperAdminToken);
   const campusSecurityMatches = campusSecurityToken && isMatchingToken(token, campusSecurityToken);
 
   if (superAdminMatches || campusSecurityMatches) {
@@ -747,7 +763,8 @@ app.post('/api/validate-login', (req, res) => {
     }
 
     if (selectedRole === 'super-admin') {
-      const isValid = Boolean(SUPER_ADMIN_TOKEN) && isMatchingToken(passwordValue, SUPER_ADMIN_TOKEN);
+      const expected = getCampusRoleToken(selectedCampus, 'super-admin');
+      const isValid = Boolean(expected) && isMatchingToken(passwordValue, expected);
       if (!isValid) {
         return res.json({ valid: false, role: 'super-admin', campus: selectedCampus });
       }
@@ -813,9 +830,11 @@ app.get('/api/super-admin/passwords', requireAdminAuth, (req, res) => {
 
     const adminMap = readStoredCampusTokenMap('admin');
     const securityMap = readStoredCampusTokenMap('security');
+    const superAdminMap = readStoredCampusTokenMap('super-admin');
     res.json({
       admin: adminMap,
       security: securityMap,
+      superAdmin: superAdminMap,
       campuses: SUB_CAMPUSES
     });
   } catch (error) {
@@ -834,8 +853,8 @@ app.post('/api/super-admin/passwords', requireAdminAuth, (req, res) => {
     const selectedRole = String(role || '').toLowerCase();
     const selectedCampus = resolveCampusName(campus || DEFAULT_CAMPUS);
 
-    if (!selectedRole || !['admin', 'security'].includes(selectedRole)) {
-      return res.status(400).json({ error: 'Role must be admin or security.' });
+    if (!selectedRole || !['admin', 'security', 'super-admin'].includes(selectedRole)) {
+      return res.status(400).json({ error: 'Role must be admin, security, or super-admin.' });
     }
 
     setCampusRoleToken(selectedCampus, selectedRole, password);

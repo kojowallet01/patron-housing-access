@@ -19,7 +19,7 @@ function Admin() {
   const [rangeVisitors, setRangeVisitors] = useState([])
   const [rangeInfo, setRangeInfo] = useState(null)
   const [rangeLoading, setRangeLoading] = useState(false)
-  const [credentialMap, setCredentialMap] = useState({ admin: {}, security: {} })
+  const [credentialMap, setCredentialMap] = useState({ admin: {}, security: {}, superAdmin: {} })
   const [draftPasswords, setDraftPasswords] = useState({})
   const [credentialMessage, setCredentialMessage] = useState('')
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
@@ -123,7 +123,8 @@ function Admin() {
       const data = await response.json()
       setCredentialMap({
         admin: data.admin || {},
-        security: data.security || {}
+        security: data.security || {},
+        superAdmin: data.superAdmin || {}
       })
     } catch (error) {
       console.error('Error fetching credential map:', error)
@@ -359,9 +360,20 @@ function Admin() {
                             style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1' }}
                           />
                         </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Super admin password</label>
+                          <input
+                            type="password"
+                            value={draftPasswords[`${campusName}:super-admin`] ?? credentialMap.superAdmin?.[campusName] ?? ''}
+                            onChange={(e) => handlePasswordChange(campusName, 'super-admin', e.target.value)}
+                            placeholder="Set super admin password"
+                            style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1' }}
+                          />
+                        </div>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           <button className="btn btn-primary" onClick={() => saveCampusPassword(campusName, 'admin')} style={{ width: 'auto', padding: '10px 16px' }}>Save Admin</button>
                           <button className="btn btn-secondary" onClick={() => saveCampusPassword(campusName, 'security')} style={{ width: 'auto', padding: '10px 16px' }}>Save Security</button>
+                          <button className="btn btn-secondary" onClick={() => saveCampusPassword(campusName, 'super-admin')} style={{ width: 'auto', padding: '10px 16px' }}>Save Super Admin</button>
                         </div>
                       </div>
                     </div>
