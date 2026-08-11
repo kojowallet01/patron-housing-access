@@ -101,7 +101,8 @@ function RoleGate({ role, title, subtitle, children }) {
     <div className="fullscreen-container role-gate-page">
       <div className="login-wrap">
         <header className="login-header">
-          <h1>🏛️ {CAMPUS_INSTITUTE_NAME}</h1>
+          <img src="/logo.png" alt="Campus Institute" className="login-logo" />
+          <h1>{CAMPUS_INSTITUTE_NAME}</h1>
           <p>Click on your campus to log in</p>
         </header>
 

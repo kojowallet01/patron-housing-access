@@ -1538,6 +1538,13 @@ tr:hover {
   margin: 0;
 }
 
+.login-logo {
+  height: 110px;
+  object-fit: contain;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
 .login-header p {
   margin: 10px 0 0;
   font-size: 1.1rem;
@@ -1653,6 +1660,10 @@ tr:hover {
 
   .login-header h1 {
     font-size: 1.7rem;
+  }
+
+  .login-logo {
+    height: 80px;
   }
 }
 
