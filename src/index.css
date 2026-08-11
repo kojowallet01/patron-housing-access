@@ -1667,6 +1667,101 @@ tr:hover {
   }
 }
 
+/* ===== ENTRANCE (campus picker) / ACCESS QR ===== */
+.entrance-campus-box {
+  min-height: 96px;
+  font-size: 1.05rem;
+}
+
+.entrance-hint {
+  text-align: center;
+  color: #6b7280;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.access-qr-heading {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #111827;
+  text-align: center;
+  margin: 0;
+}
+
+.access-qr-container {
+  background: #ffffff;
+  border: 2px solid #e5e7eb;
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  margin: 0 auto;
+  width: 100%;
+  max-width: 420px;
+  box-sizing: border-box;
+}
+
+.access-qr-container .entrance-qr {
+  width: 100%;
+  height: auto;
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.access-qr-container .loading {
+  padding: 60px 0;
+}
+
+.registration-link {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 420px;
+}
+
+.access-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 420px;
+  text-align: left;
+}
+
+.access-step {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  font-size: 1.05rem;
+  color: #1f2937;
+}
+
+.access-step .step-number {
+  background: #111827;
+  color: #ffffff;
+  width: 35px;
+  height: 35px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .entrance-campus-box {
+    min-height: 80px;
+    font-size: 0.95rem;
+  }
+
+  .access-qr-container {
+    padding: 20px;
+  }
+}
+
 .home-header {
   text-align: center;
   padding: 44px 20px 8px;

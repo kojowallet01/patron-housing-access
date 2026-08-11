@@ -1,6 +1,7 @@
 import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Entrance from './pages/Entrance'
+import AccessQR from './pages/AccessQR'
 import RegisterPage from './pages/RegisterPage'
 import Security from './pages/Security'
 import Admin from './pages/admin/Admin'
@@ -66,6 +67,7 @@ function App() {
             </RoleGate>
           )}
         />
+        <Route path="/access" element={<AccessQR />} />
         <Route path="/entrance" element={<Entrance />} />
         <Route path="/" element={<Entrance />} />
         <Route path="*" element={<Navigate to="/" replace />} />
