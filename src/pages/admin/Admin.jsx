@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { API_URL, CAMPUS_INSTITUTE_NAME, getCampusAuthHeaders, getSelectedCampus } from '../../config'
 import { validateSession } from '../../auth'
 import ReportLinks from './ReportLinks'
@@ -16,9 +16,6 @@ function Admin() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [visitsRange, setVisitsRange] = useState('day')
-  const [rangeVisitors, setRangeVisitors] = useState([])
-  const [rangeInfo, setRangeInfo] = useState(null)
-  const [rangeLoading, setRangeLoading] = useState(false)
   const [credentialMap, setCredentialMap] = useState({ admin: {}, security: {}, superAdmin: {} })
   const [draftPasswords, setDraftPasswords] = useState({})
   const [credentialMessage, setCredentialMessage] = useState('')
@@ -98,17 +95,12 @@ function Admin() {
 
   const fetchVisitRange = async (range = 'day') => {
     try {
-      setRangeLoading(true)
       const authHeaders = getCampusAuthHeaders(activeCampus)
       const visitsRes = await fetch(`${API_URL}/admin/visits?range=${range}&campus=${encodeURIComponent(activeCampus)}`, { headers: authHeaders })
-      const visitsData = await visitsRes.json()
-      setRangeVisitors(visitsData.students || [])
-      setRangeInfo(visitsData)
+      await visitsRes.json()
       setVisitsRange(range)
     } catch (error) {
       console.error('Error fetching visit range:', error)
-    } finally {
-      setRangeLoading(false)
     }
   }
 

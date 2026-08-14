@@ -1,6 +1,5 @@
-import React from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, CalendarRange, CalendarClock, BarChart3 } from 'lucide-react'
+import { CalendarDays, CalendarRange, CalendarClock, BarChart3, Infinity as InfinityIcon, Tag } from 'lucide-react'
 import { useAdminContext } from './AdminLayout'
 
 const REPORTS = [
@@ -24,6 +23,20 @@ const REPORTS = [
     desc: 'Full month overview of signups, visits, and totals',
     icon: CalendarRange,
     tone: 'amber'
+  },
+  {
+    to: '/admin/reports/all-time',
+    title: 'All-Time Signups',
+    desc: 'Every recorded check-in from the very first day to today',
+    icon: InfinityIcon,
+    tone: 'violet'
+  },
+  {
+    to: '/admin/reports/by-purpose',
+    title: 'Visits by Purpose',
+    desc: 'Purpose breakdown with visit counts and unique visitors',
+    icon: Tag,
+    tone: 'sky'
   }
 ]
 

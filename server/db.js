@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { mkdirSync } from 'fs';
+import { mkdirSync, statSync } from 'fs';
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 
@@ -50,38 +50,38 @@ function createSqliteTables() {
 
   try {
     sqlite.prepare('ALTER TABLE students ADD COLUMN campus TEXT NOT NULL DEFAULT "TESANO CAMPUS"').run();
-  } catch (error) {
+  } catch {
     // column already exists
   }
 
   try {
     sqlite.prepare('ALTER TABLE access_tokens ADD COLUMN campus TEXT NOT NULL DEFAULT "TESANO CAMPUS"').run();
-  } catch (error) {
+  } catch {
     // column already exists
   }
 
   try {
     sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_students_campus ON students (campus)').run();
     sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_access_tokens_campus ON access_tokens (campus)').run();
-  } catch (error) {
+  } catch {
     // ignore if index creation fails on older DBs
   }
 
   try {
     sqlite.prepare('ALTER TABLE access_tokens ADD COLUMN verified_at TEXT').run();
-  } catch (error) {
+  } catch {
     // column already exists
   }
 
   try {
     sqlite.prepare('ALTER TABLE students ADD COLUMN flagged INTEGER NOT NULL DEFAULT 0').run();
-  } catch (error) {
+  } catch {
     // column already exists
   }
 
   try {
     sqlite.prepare('ALTER TABLE students ADD COLUMN flag_note TEXT').run();
-  } catch (error) {
+  } catch {
     // column already exists
   }
 
@@ -123,7 +123,7 @@ function createSqliteTables() {
     sqlite.prepare("UPDATE sessions SET campus = 'CANTOMENT CAMPUS' WHERE campus = 'CHRISTIANSBORG CAMPUS'").run();
     sqlite.prepare("UPDATE settings SET key = 'campus_qr_CANTOMENT_CAMPUS' WHERE key = 'campus_qr_CHRISTIANSBORG_CAMPUS'").run();
     sqlite.prepare("UPDATE settings SET value = REPLACE(value, 'CHRISTIANSBORG CAMPUS', 'CANTOMENT CAMPUS') WHERE key IN ('campus_admin_tokens', 'campus_security_tokens', 'campus_super_admin_tokens')").run();
-  } catch (error) {
+  } catch {
     // tables may not exist yet on a fresh DB
   }
 }
@@ -374,6 +374,149 @@ export async function updateStudentFlag(id, flagged, note) {
     .run(flagged ? 1 : 0, (note || '').trim(), id);
 }
 
+export async function updateStudent(id, updates) {
+  const name = String(updates.name || '').trim();
+  const phone = String(updates.phone || '').trim();
+  const purpose = String(updates.purpose || '').trim();
+
+  if (supabase) {
+    const { error } = await supabase
+      .from('students')
+      .update({ name, phone, purpose })
+      .eq('id', id);
+    if (error) throw error;
+    return;
+  }
+
+  sqlite.prepare('UPDATE students SET name = ?, phone = ?, purpose = ? WHERE id = ?')
+    .run(name, phone, purpose, id);
+}
+
+export async function deleteStudent(id) {
+  if (supabase) {
+    const { error: tokenError } = await supabase.from('access_tokens').delete().eq('student_id', id);
+    if (tokenError) throw tokenError;
+    const { error } = await supabase.from('students').delete().eq('id', id);
+    if (error) throw error;
+    return;
+  }
+
+  sqlite.prepare('DELETE FROM access_tokens WHERE student_id = ?').run(id);
+  sqlite.prepare('DELETE FROM students WHERE id = ?').run(id);
+}
+
+export async function listTokensForStudent(studentId) {
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('access_tokens')
+      .select('*, students(id,name,phone,purpose)')
+      .eq('student_id', studentId)
+      .not('verified_at', 'is', null)
+      .order('used_at', { ascending: false });
+    if (error) {
+      console.error('Supabase student visits failed:', error.message || error);
+      return [];
+    }
+    return flattenTokenRows(data);
+  }
+
+  const rows = sqlite.prepare(
+    `SELECT t.*, s.name, s.phone, s.purpose
+     FROM access_tokens t
+     JOIN students s ON t.student_id = s.id
+     WHERE t.student_id = ? AND t.verified_at IS NOT NULL
+     ORDER BY t.used_at DESC`
+  ).all(studentId);
+  return flattenTokenRows(rows);
+}
+
+export async function exportAllData() {
+  if (supabase) {
+    const [students, tokens, settings] = await Promise.all([
+      supabase.from('students').select('*').order('created_at', { ascending: false }),
+      supabase.from('access_tokens').select('*').order('created_at', { ascending: false }),
+      supabase.from('settings').select('key, value')
+    ]);
+    return {
+      students: (students.data || []).map(s => ({ ...s, flagged: Boolean(s.flagged) })),
+      tokens: tokens.data || [],
+      settings: settings.data || []
+    };
+  }
+
+  const students = sqlite.prepare('SELECT * FROM students ORDER BY created_at DESC').all();
+  const tokens = sqlite.prepare('SELECT * FROM access_tokens ORDER BY created_at DESC').all();
+  const settings = sqlite.prepare('SELECT key, value FROM settings').all();
+  return { students, tokens, settings };
+}
+
+export async function restoreAllData(data) {
+  const students = Array.isArray(data?.students) ? data.students : [];
+  const tokens = Array.isArray(data?.tokens) ? data.tokens : [];
+  const settings = Array.isArray(data?.settings) ? data.settings : [];
+
+  if (supabase) {
+    const { error: delTokens } = await supabase.from('access_tokens').delete().neq('id', '');
+    if (delTokens) throw delTokens;
+    const { error: delStudents } = await supabase.from('students').delete().neq('id', '');
+    if (delStudents) throw delStudents;
+    const { error: delSettings } = await supabase.from('settings').delete().neq('key', '');
+    if (delSettings) throw delSettings;
+
+    for (const s of students) {
+      await insertStudent({ ...s, flagged: Boolean(s.flagged), flag_note: s.flag_note || '' });
+    }
+    for (const t of tokens) await insertToken(t);
+    for (const k of settings) await setSetting(k.key, k.value);
+    return { students: students.length, tokens: tokens.length, settings: settings.length };
+  }
+
+  const run = sqlite.transaction(() => {
+    sqlite.prepare('DELETE FROM access_tokens').run();
+    sqlite.prepare('DELETE FROM students').run();
+    sqlite.prepare('DELETE FROM settings').run();
+
+    const insertStudentStmt = sqlite.prepare(`INSERT INTO students (id, name, phone, purpose, campus, created_at, flagged, flag_note)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const s of students) {
+      insertStudentStmt.run(
+        s.id,
+        s.name,
+        s.phone,
+        s.purpose || '',
+        s.campus || 'TESANO CAMPUS',
+        s.created_at,
+        s.flagged ? 1 : 0,
+        s.flag_note || null
+      );
+    }
+
+    const insertTokenStmt = sqlite.prepare(`INSERT INTO access_tokens (id, student_id, campus, token, valid_date, created_at, used_at, verified_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const t of tokens) {
+      insertTokenStmt.run(
+        t.id,
+        t.student_id,
+        t.campus || 'TESANO CAMPUS',
+        t.token,
+        t.valid_date,
+        t.created_at,
+        t.used_at || t.created_at,
+        t.verified_at || null
+      );
+    }
+
+    const insertSettingStmt = sqlite.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+    for (const k of settings) {
+      if (k && k.key) insertSettingStmt.run(k.key, k.value);
+    }
+  });
+  run();
+
+  settingsCache = new Map(settings.filter(k => k && k.key).map(row => [row.key, row.value]));
+  return { students: students.length, tokens: tokens.length, settings: settings.length };
+}
+
 // ---------------------------------------------------------------------------
 // Access tokens
 // ---------------------------------------------------------------------------
@@ -459,11 +602,12 @@ export async function markTokenVerified(id, verifiedAt) {
     const { error } = await supabase
       .from('access_tokens')
       .update({ verified_at: verifiedAt, used_at: verifiedAt })
-      .eq('id', id);
+      .eq('id', id)
+      .is('verified_at', null);
     if (error) throw error;
     return;
   }
-  sqlite.prepare('UPDATE access_tokens SET verified_at = ?, used_at = ? WHERE id = ?')
+  sqlite.prepare('UPDATE access_tokens SET verified_at = ?, used_at = ? WHERE id = ? AND verified_at IS NULL')
     .run(verifiedAt, verifiedAt, id);
 }
 
@@ -546,6 +690,34 @@ export async function listTokensVerifiedOn(campus, date) {
   return flattenTokenRows(rows);
 }
 
+export async function listTokensForDate(campus, validDate) {
+  if (supabase) {
+    let query = supabase
+      .from('access_tokens')
+      .select('*, students(id,name,phone,purpose)')
+      .eq('valid_date', validDate)
+      .order('created_at', { ascending: true });
+    if (campus) query = query.eq('campus', campus);
+    const { data, error } = await query;
+    if (error) {
+      console.error('Supabase tokens-for-date query failed:', error.message || error);
+      return [];
+    }
+    return flattenTokenRows(data);
+  }
+
+  const campusFilter = campus ? 'AND t.campus = ?' : '';
+  const params = campus ? [validDate, campus] : [validDate];
+  const rows = sqlite.prepare(
+    `SELECT t.*, s.name, s.phone, s.purpose
+     FROM access_tokens t
+     JOIN students s ON t.student_id = s.id
+     WHERE t.valid_date = ? ${campusFilter}
+     ORDER BY t.created_at ASC`
+  ).all(...params);
+  return flattenTokenRows(rows);
+}
+
 export async function countVerifiedVisits(campus, date) {
   if (supabase) {
     let query = supabase
@@ -616,6 +788,49 @@ export async function countAllVerifiedVisits(campus) {
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
+export function getSystemInfo() {  let dbSizeBytes = 0;
+  let counts = { students: 0, tokens: 0, sessions: 0, settings: 0 };
+
+  if (supabase) {
+    return {
+      storage: 'supabase',
+      durable: true,
+      dbSizeBytes,
+      counts
+    };
+  }
+
+  try {
+    dbSizeBytes = statSync(DB_FILE).size || 0;
+    counts = {
+      students: sqlite.prepare('SELECT COUNT(*) as c FROM students').get().c,
+      tokens: sqlite.prepare('SELECT COUNT(*) as c FROM access_tokens').get().c,
+      sessions: sqlite.prepare('SELECT COUNT(*) as c FROM sessions').get().c,
+      settings: sqlite.prepare('SELECT COUNT(*) as c FROM settings').get().c
+    };
+  } catch (error) {
+    console.error('System info error:', error.message || error);
+  }
+
+  return {
+    storage: 'sqlite',
+    durable: false,
+    dbFile: DB_FILE,
+    dbSizeBytes,
+    counts
+  };
+}
+
+export function closeDatabase() {
+  if (!supabase && sqlite) {
+    try {
+      sqlite.close();
+    } catch {
+      // ignore if already closed
+    }
+  }
+}
+
 export async function init() {
   createSqliteTables();
 

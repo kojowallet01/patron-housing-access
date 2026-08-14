@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { API_URL, CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, CAMPUS_COLORS, getSelectedCampus, setSelectedCampus } from '../config'
 import { setSession, validateSession } from '../auth'
 
@@ -13,7 +13,7 @@ const ROLE_OPTIONS = [
   { value: 'super-admin', label: 'Super Admin' }
 ]
 
-function RoleGate({ role, title, subtitle, children }) {
+function RoleGate({ role, children }) {
   const [selectedRole, setSelectedRole] = useState(role || 'admin')
   const [selectedCampus, setSelected] = useState(getSelectedCampus())
   const [password, setPassword] = useState('')
@@ -30,6 +30,10 @@ function RoleGate({ role, title, subtitle, children }) {
 
       const allowedRoles = ALLOWED_ROLES[role] || [role]
       if (session.valid && allowedRoles.includes(session.role)) {
+        if (session.campus) {
+          setSelected(session.campus)
+          setSelectedCampus(session.campus)
+        }
         setUnlocked(true)
       }
       setCheckingSession(false)

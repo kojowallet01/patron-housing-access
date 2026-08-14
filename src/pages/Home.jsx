@@ -1,11 +1,6 @@
-import React from 'react'
 import { CAMPUS_INSTITUTE_NAME, CAMPUS_LIST } from '../config'
 
 function Home() {
-  const openPage = (url) => {
-    window.open(url, '_blank')
-  }
-
   return (
     <div className="fullscreen-container home-page">
       <div className="home-header">

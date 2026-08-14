@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import { API_URL, CAMPUS_INSTITUTE_NAME, getCampusAuthHeaders, getSelectedCampus } from '../config'
 import { validateSession } from '../auth'
@@ -10,7 +10,9 @@ function Security() {
   const [result, setResult] = useState(null)
   const [verifying, setVerifying] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [sessionChecked, setSessionChecked] = useState(false)
   const digitRefs = [useRef(null), useRef(null), useRef(null), useRef(null)]
+  const handleVerifyRef = useRef(null)
 
   const setDigit = (index, value) => {
     const clean = value.replace(/\D/g, '').slice(0, 1)
@@ -67,6 +69,8 @@ function Security() {
           setActiveCampus(session.campus || getSelectedCampus())
         }
       }
+    }).finally(() => {
+      if (active) setSessionChecked(true)
     })
 
     return () => {
@@ -88,7 +92,7 @@ function Security() {
         setScanning(false)
         const clean = (decodedText || '').replace(/\D/g, '').slice(0, 4)
         setTokenDigits(['', '', '', ''].map((_, i) => clean[i] || ''))
-        handleVerify(decodedText)
+        handleVerifyRef.current?.(decodedText)
       },
       () => {
         // Ignore per-frame errors while scanning
@@ -133,17 +137,34 @@ function Security() {
           digitRefs[0].current?.focus()
         }, 5000)
       }
-    } catch (error) {
+    } catch {
       setResult({ valid: false, error: 'Network error' })
     } finally {
       setVerifying(false)
     }
   }
 
+  handleVerifyRef.current = handleVerify
+
   const handleReset = () => {
     setTokenDigits(['', '', '', ''])
     setResult(null)
     digitRefs[0].current?.focus()
+  }
+
+  if (!sessionChecked) {
+    return (
+      <div className="fullscreen-container security-page">
+        <div className="security-header">
+          <img src="/logo.png" alt="Patron Housing" className="page-logo-small" />
+          <h1>Security Verification</h1>
+          <p>{CAMPUS_INSTITUTE_NAME} • {activeCampus}</p>
+        </div>
+        <div className="security-content">
+          <div className="loading">Loading workspace...</div>
+        </div>
+      </div>
+    )
   }
 
   return (

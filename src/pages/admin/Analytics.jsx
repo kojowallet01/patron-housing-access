@@ -1,5 +1,3 @@
-import React from 'react'
-
 function Analytics({ analytics, range, onRangeChange }) {
   if (!analytics) return null
 

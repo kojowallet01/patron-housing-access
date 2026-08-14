@@ -1,4 +1,3 @@
-import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Entrance from './pages/Entrance'
 import AccessQR from './pages/AccessQR'
@@ -17,6 +16,8 @@ import Settings from './pages/admin/Settings'
 import DailySignups from './pages/reports/DailySignups'
 import WeeklySignups from './pages/reports/WeeklySignups'
 import MonthlySignups from './pages/reports/MonthlySignups'
+import AllTimeSignups from './pages/reports/AllTimeSignups'
+import ByPurpose from './pages/reports/ByPurpose'
 
 function App() {
   return (
@@ -57,6 +58,8 @@ function App() {
           <Route path="reports/daily" element={<DailySignups />} />
           <Route path="reports/weekly" element={<WeeklySignups />} />
           <Route path="reports/monthly" element={<MonthlySignups />} />
+          <Route path="reports/all-time" element={<AllTimeSignups />} />
+          <Route path="reports/by-purpose" element={<ByPurpose />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="/reports/daily" element={<Navigate to="/admin/reports/daily" replace />} />

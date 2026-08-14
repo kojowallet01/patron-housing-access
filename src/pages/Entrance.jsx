@@ -1,4 +1,3 @@
-import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, CAMPUS_COLORS, setSelectedCampus } from '../config'
 

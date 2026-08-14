@@ -1,5 +1,3 @@
-import React from 'react'
-
 const reportItems = [
   { title: 'Daily Signups', path: '/reports/daily' },
   { title: 'Weekly Signups', path: '/reports/weekly' },

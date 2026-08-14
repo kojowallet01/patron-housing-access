@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { API_URL, CAMPUS_INSTITUTE_NAME, DEFAULT_CAMPUS } from '../config'
 
 function RegisterPage() {

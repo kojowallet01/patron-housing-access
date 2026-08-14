@@ -1,5 +1,3 @@
-import React from 'react'
-
 export default function StatusCard() {
   return (
     <div className="sidebar-card status-widget">

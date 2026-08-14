@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Users,
@@ -16,13 +16,14 @@ import {
   CalendarCheck,
   FileText,
   UserPlus,
-  CheckCircle2
+  CheckCircle2,
+  Download
 } from 'lucide-react'
 import { API_URL, getCampusAuthHeaders } from '../../config'
 import { useAdminContext } from './AdminLayout'
 
 function Dashboard() {
-  const { activeCampus, isSuperAdmin, refreshKey } = useAdminContext()
+  const { activeCampus, refreshKey } = useAdminContext()
   const [stats, setStats] = useState(null)
   const [recentActivity, setRecentActivity] = useState([])
   const [loading, setLoading] = useState(true)
@@ -56,6 +57,27 @@ function Dashboard() {
     return () => clearInterval(interval)
   }, [fetchData])
 
+  const handleBackup = async () => {
+    try {
+      const authHeaders = getCampusAuthHeaders(activeCampus)
+      const response = await fetch(`${API_URL}/admin/export`, { headers: authHeaders })
+      if (!response.ok) throw new Error('Export failed')
+      const data = await response.json()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `patron-housing-backup-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Backup error:', error)
+      window.alert('Unable to create backup. Please try again.')
+    }
+  }
+
   const statCards = [
     { label: 'Total Students', value: stats?.totalStudents ?? '--', icon: Users, tone: 'indigo' },
     { label: "Today's Visits", value: stats?.todayVisits ?? '--', icon: DoorOpen, tone: 'emerald' },
@@ -85,6 +107,10 @@ function Dashboard() {
           <h1 className="admin-page-title">Dashboard</h1>
           <p className="admin-page-subtitle">Overview of campus activity and visitor flow</p>
         </div>
+        <button type="button" className="admin-btn admin-btn-secondary" onClick={handleBackup}>
+          <Download size={16} strokeWidth={2} />
+          Backup Data
+        </button>
       </div>
 
       <div className="admin-stats-grid">

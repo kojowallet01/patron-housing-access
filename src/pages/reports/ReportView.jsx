@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
-import { Download, Printer, CalendarRange } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Link } from 'react-router-dom'
+import { Download, Printer, CalendarRange, Search, ArrowLeft } from 'lucide-react'
 import { API_URL, getCampusAuthHeaders } from '../../config'
 import { useAdminContext } from '../admin/AdminLayout'
 
@@ -9,6 +10,7 @@ export default function ReportView({ range, title, subtitle }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [purpose, setPurpose] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     setPurpose('')
@@ -64,10 +66,25 @@ export default function ReportView({ range, title, subtitle }) {
 
   const uniqueVisitors = data?.students ? new Set(data.students.map(s => s.phone)).size : 0
 
+  const filteredStudents = useMemo(() => {
+    const rows = data?.students || []
+    const term = searchTerm.trim().toLowerCase()
+    if (!term) return rows
+    return rows.filter(s =>
+      (s.name || '').toLowerCase().includes(term) ||
+      (s.phone || '').toLowerCase().includes(term) ||
+      (s.purpose || '').toLowerCase().includes(term)
+    )
+  }, [data, searchTerm])
+
   return (
     <div className="admin-page-container">
       <div className="admin-page-heading admin-report-heading">
         <div>
+          <Link to="/admin/reports" className="admin-back-link">
+            <ArrowLeft size={15} strokeWidth={2} />
+            Back to Reports
+          </Link>
           <h1 className="admin-page-title">{title}</h1>
           <p className="admin-page-subtitle">
             {subtitle} · <strong>{activeCampus}</strong>
@@ -147,7 +164,22 @@ export default function ReportView({ range, title, subtitle }) {
           <div className="admin-card-title">
             <h2>Visitor List</h2>
           </div>
-          <span className="admin-card-badge">{data?.students?.length || 0} entries</span>
+          <span className="admin-card-badge">
+            {filteredStudents.length}{filteredStudents.length !== (data?.students?.length || 0) ? ` of ${data?.students?.length || 0}` : ''} entries
+          </span>
+        </div>
+
+        <div className="admin-table-toolbar">
+          <div className="admin-search">
+            <Search size={16} strokeWidth={2} />
+            <input
+              type="text"
+              placeholder="Search by name, phone, or purpose..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <span className="admin-row-count">{uniqueVisitors} unique visitors</span>
         </div>
 
         {loading ? (
@@ -168,8 +200,8 @@ export default function ReportView({ range, title, subtitle }) {
                 </tr>
               </thead>
               <tbody>
-                {data?.students?.length ? (
-                  data.students.map((student, index) => (
+                {filteredStudents.length ? (
+                  filteredStudents.map((student, index) => (
                     <tr key={index}>
                       <td className="admin-table-index">{index + 1}</td>
                       <td><strong>{student.name}</strong></td>
@@ -181,10 +213,20 @@ export default function ReportView({ range, title, subtitle }) {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="admin-empty-state">No signups recorded for this range.</td>
+                    <td colSpan="6" className="admin-empty-state">
+                      {searchTerm.trim() ? 'No visitors match your search.' : 'No signups recorded for this range.'}
+                    </td>
                   </tr>
                 )}
               </tbody>
+              {filteredStudents.length > 0 && (
+                <tfoot>
+                  <tr className="admin-table-footer">
+                    <td colSpan="3">Total ({filteredStudents.length} visits)</td>
+                    <td colSpan="3">{uniqueVisitors} unique visitors</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         )}
