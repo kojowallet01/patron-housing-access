@@ -2,7 +2,7 @@
 # Deploy: Render dashboard -> New -> Blueprint -> select this repo
 services:
   - type: web
-    name: aifsp
+    name: aifsp-portal
     runtime: docker
     repo: https://github.com/kojowallet01/patron-housing-access
     plan: starter
