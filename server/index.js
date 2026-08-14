@@ -43,7 +43,7 @@ import {
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
-const CAMPUS_INSTITUTE_NAME = process.env.CAMPUS_INSTITUTE_NAME || 'CAMPUS INSTITUTE';
+const CAMPUS_INSTITUTE_NAME = process.env.CAMPUS_INSTITUTE_NAME || 'ACCRA INSTITUTE FACULTY STUDENT PORTAL';
 const DEFAULT_CAMPUS = process.env.DEFAULT_CAMPUS || 'TESANO CAMPUS';
 const SUB_CAMPUSES = [
   'TESANO CAMPUS',
@@ -1021,7 +1021,7 @@ app.get('/api/admin/students/:id/visits', requireAdminAuth, async (req, res) => 
 app.get('/api/admin/export', requireAdminAuth, async (req, res) => {
   try {
     const data = await exportAllData();
-    res.setHeader('Content-Disposition', `attachment; filename="patron-housing-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+    res.setHeader('Content-Disposition', `attachment; filename="aifsp-backup-${new Date().toISOString().slice(0, 10)}.json"`);
     res.json(data);
   } catch (error) {
     console.error('Export error:', error);

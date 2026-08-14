@@ -5,5 +5,5 @@ services:
     ports:
       - '3001:3001'
     volumes:
-      - ./patron-housing.db:/app/patron-housing.db
+      - ./aifsp.db:/app/aifsp.db
     restart: unless-stopped

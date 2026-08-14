@@ -237,4 +237,4 @@ Your campus now has a modern, efficient sign-in system.
 **Questions or Issues?**
 Document them for your IT team or reach out to your developer.
 
-**Built for Tesano Campus Institute** 🏛️
+**Built for AIFSP** 🏛️

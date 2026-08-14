@@ -1,6 +1,6 @@
-# Tesano Campus Institute - QR Code Sign-In System
+# AIFSP - QR Code Sign-In System
 
-A complete web-based QR code sign-in system for managing student access to Tesano Campus Institute.
+A complete web-based QR code sign-in system for managing student access to AIFSP.
 
 ## Features
 
@@ -133,7 +133,7 @@ For issues or questions, contact campus administration.
 
 ---
 
-Built for Tesano Campus Institute - Religious Studies & Community Learning Center
+Built for AIFSP - Religious Studies & Community Learning Center
 
 ## CI / Docker
 

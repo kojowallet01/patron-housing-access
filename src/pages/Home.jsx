@@ -5,7 +5,7 @@ function Home() {
     <div className="fullscreen-container home-page">
       <div className="home-header">
         <h1>🏛️ {CAMPUS_INSTITUTE_NAME}</h1>
-        <p>Sub-campus access control panel</p>
+        <p>Faculty student access portal</p>
       </div>
 
       <div className="home-content">

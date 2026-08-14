@@ -1,4 +1,4 @@
-# 🏛️ Tesano Campus Institute - Complete Setup Guide
+# 🏛️ AIFSP - Complete Setup Guide
 
 ## ✅ System Is Running!
 
@@ -331,5 +331,5 @@ STEP 5: ENTERS CAMPUS
 
 ---
 
-Built for **Tesano Campus Institute** 🏛️  
+Built for **AIFSP** 🏛️  
 Religious Studies & Community Learning Center

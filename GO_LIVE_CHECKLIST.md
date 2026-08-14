@@ -285,7 +285,7 @@ Track these KPIs:
 
 ---
 
-**Built for Tesano Campus Institute** 🏛️
+**Built for AIFSP** 🏛️
 
 **Launch Date:** _________________
 

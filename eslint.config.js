@@ -3,7 +3,7 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'server/data/**', 'patron-housing.db', '*.db', '*.db-wal', '*.db-shm']
+    ignores: ['dist/**', 'node_modules/**', 'server/data/**', 'aifsp.db', '*.db', '*.db-wal', '*.db-shm']
   },
   {
     files: ['**/*.js', '**/*.jsx'],

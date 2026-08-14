@@ -1,7 +1,7 @@
 {
-  "name": "tesano-campus-signin",
+  "name": "aifsp-portal",
   "version": "1.0.0",
-  "description": "QR code sign-in system for Tesano Campus Institute",
+  "description": "QR code sign-in system for Accra Institute Faculty Student Portal (AIFSP)",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",

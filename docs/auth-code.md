@@ -15,11 +15,11 @@ Collated from the actual source files. Line numbers refer to the files as of thi
 `.env.example`:
 
 ```dotenv
-# Campus Institute environment example
+# AIFSP environment example
 # Copy this file to .env and update the secret values.
 
 # Core campus configuration
-CAMPUS_INSTITUTE_NAME=CAMPUS INSTITUTE
+CAMPUS_INSTITUTE_NAME=AIFSP
 DEFAULT_CAMPUS=TESANO CAMPUS
 
 # Global fallback credentials
@@ -52,7 +52,7 @@ How the server reads them — `server/index.js:42-67`:
 ```js
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
-const CAMPUS_INSTITUTE_NAME = process.env.CAMPUS_INSTITUTE_NAME || 'CAMPUS INSTITUTE';
+const CAMPUS_INSTITUTE_NAME = process.env.CAMPUS_INSTITUTE_NAME || 'AIFSP';
 const DEFAULT_CAMPUS = process.env.DEFAULT_CAMPUS || 'TESANO CAMPUS';
 const SUB_CAMPUSES = [
   'TESANO CAMPUS',
@@ -126,7 +126,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 export const useSupabase = Boolean(SUPABASE_URL && SUPABASE_SERVICE_KEY);
 
-const DB_FILE = process.env.DB_PATH || path.join(process.cwd(), 'patron-housing.db');
+const DB_FILE = process.env.DB_PATH || path.join(process.cwd(), 'aifsp.db');
 
 // ---------------------------------------------------------------------------
 // SQLite backend (local development / fallback)
@@ -149,7 +149,7 @@ export const API_URL = import.meta.env.PROD
   ? '/api'  // Production: uses proxy or same origin
   : `${window.location.protocol}//${window.location.hostname}:3001/api`;
 
-export const CAMPUS_INSTITUTE_NAME = 'CAMPUS INSTITUTE';
+export const CAMPUS_INSTITUTE_NAME = 'AIFSP';
 export const DEFAULT_CAMPUS = import.meta.env.VITE_CAMPUS || 'TESANO CAMPUS';
 ```
 
@@ -901,7 +901,7 @@ app.get('/api/admin/students/:id/visits', requireAdminAuth, async (req, res) => 
 app.get('/api/admin/export', requireAdminAuth, async (req, res) => {
   try {
     const data = await exportAllData();
-    res.setHeader('Content-Disposition', `attachment; filename="patron-housing-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+    res.setHeader('Content-Disposition', `attachment; filename="aifsp-backup-${new Date().toISOString().slice(0, 10)}.json"`);
     res.json(data);
   } catch (error) {
     console.error('Export error:', error);

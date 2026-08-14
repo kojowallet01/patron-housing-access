@@ -164,7 +164,7 @@ function RegisterPage() {
     return (
       <div className="mobile-container">
         <div className="mobile-header">
-          <img src="/logo.png" alt="Patron Housing" className="mobile-logo" />
+          <img src="/logo.png" alt="AIFSP" className="mobile-logo" />
           <h1>{CAMPUS_INSTITUTE_NAME}</h1>
         </div>
 
@@ -213,7 +213,7 @@ function RegisterPage() {
   return (
     <div className="mobile-container">
       <div className="mobile-header">
-        <img src="/logo.png" alt="Patron Housing" className="mobile-logo" />
+        <img src="/logo.png" alt="AIFSP" className="mobile-logo" />
         <h1>{CAMPUS_INSTITUTE_NAME}</h1>
         <p>{campusName} • Secure Access Management</p>
       </div>

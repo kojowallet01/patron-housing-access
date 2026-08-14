@@ -1,4 +1,4 @@
-# Tesano Campus Institute - User Flow Guide
+# AIFSP - User Flow Guide
 
 ## 🎯 New Simplified Flow
 
@@ -116,7 +116,7 @@
 ### Main Page (http://localhost:3000)
 ```
 ╔════════════════════════════════════════════════════╗
-║     🏛️ Tesano Campus Institute                    ║
+║     🏛️ AIFSP                    ║
 ║   Religious Studies & Community Learning Center    ║
 ╠════════════════════════════════════════════════════╣
 ║  [Entrance QR] [Security Verify] [Admin Dashboard] ║
@@ -142,7 +142,7 @@
 ### Registration Page (Student's Phone)
 ```
 ╔════════════════════════════════════════════════════╗
-║     🏛️ Tesano Campus Institute                    ║
+║     🏛️ AIFSP                    ║
 ╠════════════════════════════════════════════════════╣
 ║                                                    ║
 ║         📝 Student Registration                    ║
@@ -167,7 +167,7 @@
 ### Access Token Page (After Registration)
 ```
 ╔════════════════════════════════════════════════════╗
-║     🏛️ Tesano Campus Institute                    ║
+║     🏛️ AIFSP                    ║
 ╠════════════════════════════════════════════════════╣
 ║                                                    ║
 ║                    ✅                              ║
@@ -226,4 +226,4 @@
 
 ---
 
-**Built for Tesano Campus Institute** 🏛️
+**Built for AIFSP** 🏛️

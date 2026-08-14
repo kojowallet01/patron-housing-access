@@ -5,7 +5,8 @@ export const API_URL = import.meta.env.PROD
   ? '/api'  // Production: uses proxy or same origin
   : `${window.location.protocol}//${window.location.hostname}:3001/api`;
 
-export const CAMPUS_INSTITUTE_NAME = 'CAMPUS INSTITUTE';
+export const CAMPUS_INSTITUTE_NAME = 'ACCRA INSTITUTE FACULTY STUDENT PORTAL';
+export const CAMPUS_INSTITUTE_SHORT = 'AIFSP';
 export const CAMPUS_LIST = [
   'TESANO CAMPUS',
   'CANTOMENT CAMPUS',
@@ -69,6 +70,7 @@ export const getBaseURL = () => {
 export const config = {
   API_URL,
   CAMPUS_INSTITUTE_NAME,
+  CAMPUS_INSTITUTE_SHORT,
   CAMPUS_LIST,
   DEFAULT_CAMPUS,
   getSelectedCampus,

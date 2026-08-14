@@ -1,4 +1,4 @@
--- Supabase Postgres schema for Patron Housing Access
+-- Supabase Postgres schema for AIFSP Access
 -- Run this ONCE in the Supabase SQL Editor (Dashboard -> SQL -> New query).
 -- Tables mirror the original SQLite schema. Text timestamps are used on
 -- purpose so date/time string comparisons behave identically to SQLite.

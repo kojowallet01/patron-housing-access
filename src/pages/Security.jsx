@@ -156,7 +156,7 @@ function Security() {
     return (
       <div className="fullscreen-container security-page">
         <div className="security-header">
-          <img src="/logo.png" alt="Patron Housing" className="page-logo-small" />
+          <img src="/logo.png" alt="AIFSP" className="page-logo-small" />
           <h1>Security Verification</h1>
           <p>{CAMPUS_INSTITUTE_NAME} • {activeCampus}</p>
         </div>
@@ -170,7 +170,7 @@ function Security() {
   return (
     <div className="fullscreen-container security-page">
       <div className="security-header">
-        <img src="/logo.png" alt="Patron Housing" className="page-logo-small" />
+        <img src="/logo.png" alt="AIFSP" className="page-logo-small" />
         <h1>Security Verification</h1>
         <p>{CAMPUS_INSTITUTE_NAME} • {activeCampus}</p>
       </div>

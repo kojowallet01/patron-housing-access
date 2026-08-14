@@ -89,4 +89,4 @@ Run: npm run dev
 Generated: August 5, 2026
 System Version: 1.0.0
 
-🏛️ Tesano Campus Institute
+🏛️ AIFSP

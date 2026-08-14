@@ -98,7 +98,7 @@ function Settings() {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `patron-housing-backup-${new Date().toISOString().slice(0, 10)}.json`
+      link.download = `aifsp-backup-${new Date().toISOString().slice(0, 10)}.json`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -467,7 +467,7 @@ function Settings() {
             </div>
           </div>
           <p className="admin-settings-about">
-            {CAMPUS_INSTITUTE_NAME} Access Control — manage students, visitors, and security access across
+            {CAMPUS_INSTITUTE_NAME} — manage students, visitors, and security access across
             your campuses. Report issues or request features at the front desk.
           </p>
           <span className="admin-settings-version">Version 2.0</span>

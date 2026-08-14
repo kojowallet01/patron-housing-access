@@ -13,7 +13,7 @@ function Entrance() {
     <div className="fullscreen-container role-gate-page">
       <div className="login-wrap">
         <header className="login-header">
-          <img src="/logo.png" alt="Campus Institute" className="login-logo" />
+          <img src="/logo.png" alt="AIFSP" className="login-logo" />
           <h1>{CAMPUS_INSTITUTE_NAME}</h1>
           <p>Select your campus to get access</p>
         </header>

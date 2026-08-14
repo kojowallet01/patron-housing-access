@@ -276,7 +276,7 @@ function Admin() {
     <div className="fullscreen-container admin-page">
       <div className="admin-header">
         <div className="admin-header-left">
-          <img src="/logo.png" alt="Patron Housing" className="admin-logo" />
+          <img src="/logo.png" alt="AIFSP" className="admin-logo" />
           <div>
             <h1>Admin Dashboard</h1>
             <p>{CAMPUS_INSTITUTE_NAME} • {activeCampus}</p>

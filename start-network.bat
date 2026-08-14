@@ -1,14 +1,14 @@
 @echo off
 echo.
 echo ========================================
-echo  Tesano Campus Sign-In System
+echo  AIFSP Sign-In System
 echo  Starting Network Server...
 echo ========================================
 echo.
 
 echo Opening firewall ports so phones can connect...
-netsh advfirewall firewall add rule name="Patron Housing (3000)" dir=in action=allow protocol=TCP localport=3000 >nul 2>&1
-netsh advfirewall firewall add rule name="Patron Housing (3001)" dir=in action=allow protocol=TCP localport=3001 >nul 2>&1
+netsh advfirewall firewall add rule name="AIFSP (3000)" dir=in action=allow protocol=TCP localport=3000 >nul 2>&1
+netsh advfirewall firewall add rule name="AIFSP (3001)" dir=in action=allow protocol=TCP localport=3001 >nul 2>&1
 echo  (If you see no "Ok" message above, run this file once as Administrator.)
 echo.
 

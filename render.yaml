@@ -1,8 +1,8 @@
-# Render Blueprint for Patron Housing Access
+# Render Blueprint for AIFSP (Accra Institute Faculty Student Portal)
 # Deploy: Render dashboard -> New -> Blueprint -> select this repo
 services:
   - type: web
-    name: patron-housing-access
+    name: aifsp
     runtime: docker
     repo: https://github.com/kojowallet01/patron-housing-access
     plan: starter
@@ -19,7 +19,7 @@ services:
       - key: PORT
         value: 3001
       - key: DB_PATH
-        value: /data/patron-housing.db
+        value: /data/aifsp.db
       - key: PUBLIC_BASE_URL
         value: $RENDER_EXTERNAL_URL
       - key: SUPABASE_URL

@@ -1,4 +1,4 @@
-# Tesano Campus Institute - Page URLs
+# AIFSP - Page URLs
 
 ## 📄 Separate Pages
 

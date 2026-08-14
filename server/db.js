@@ -7,7 +7,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 export const useSupabase = Boolean(SUPABASE_URL && SUPABASE_SERVICE_KEY);
 
-const DB_FILE = process.env.DB_PATH || path.join(process.cwd(), 'patron-housing.db');
+const DB_FILE = process.env.DB_PATH || path.join(process.cwd(), 'aifsp.db');
 
 // ---------------------------------------------------------------------------
 // SQLite backend (local development / fallback)

@@ -94,7 +94,7 @@ function AdminLayout() {
         </div>
         <div className="admin-sidebar-brand-text">
           <span className="admin-sidebar-brand-name">{CAMPUS_INSTITUTE_NAME}</span>
-          <span className="admin-sidebar-brand-sub">Access Control</span>
+          <span className="admin-sidebar-brand-sub">Faculty Student Portal</span>
         </div>
       </div>
 

@@ -1,7 +1,7 @@
-# CAMPUS INSTITUTE - Current Work Summary
+# AIFSP - Current Work Summary
 
 ## Project status
-This project now includes the CAMPUS INSTITUTE multi-campus access flow with role-based login and campus-aware access control.
+This project now includes the AIFSP multi-campus access flow with role-based login and campus-aware access control.
 
 ## Included features
 - Multi-campus branding for: TESANO CAMPUS, CANTOMENT CAMPUS, ASHIAMAN CAMPUS, LEGON CAMPUS, TEMA CAMPUS

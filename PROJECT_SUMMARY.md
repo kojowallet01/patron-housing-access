@@ -1,7 +1,7 @@
-# CAMPUS INSTITUTE ACCESS SYSTEM - Project Summary
+# AIFSP ACCESS SYSTEM - Project Summary
 
 ## Overview
-This project is a multi-campus access and visitor management system for CAMPUS INSTITUTE with campus-specific admin and security control.
+This project is a multi-campus access and visitor management system for AIFSP with campus-specific admin and security control.
 
 ## Campus structure
 The current campus set is:

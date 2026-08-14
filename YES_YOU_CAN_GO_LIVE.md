@@ -359,7 +359,7 @@ npm run dev
 
 ---
 
-**Built with confidence for Tesano Campus Institute**
+**Built with confidence for AIFSP**
 
 *"The best time to launch was yesterday. The second best time is now."*
 

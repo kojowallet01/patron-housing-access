@@ -1,4 +1,4 @@
-# 🚀 Deployment Guide - Tesano Campus Institute Sign-In System
+# 🚀 Deployment Guide - AIFSP Sign-In System
 
 ## ✅ Pre-Deployment Checklist
 
@@ -95,7 +95,7 @@ Your application is **production-ready**! Here's what you need to consider:
 2. **Login and Create App**
    ```cmd
    heroku login
-   heroku create tesano-campus-signin
+   heroku create aifsp-portal
    ```
 
 3. **Deploy**
@@ -150,7 +150,7 @@ Your application is **production-ready**! Here's what you need to consider:
 
 1. **Build Docker Image**
    ```cmd
-   docker build -t tesano-campus-signin .
+   docker build -t aifsp-portal .
    ```
 
 2. **Run Container**
@@ -324,7 +324,7 @@ app.use(cors({
 
 ## 🔧 Recommended Production Setup
 
-**For Tesano Campus Institute:**
+**For AIFSP:**
 
 1. **Phase 1: Start Local (Today)**
    - Deploy on campus network
@@ -433,5 +433,5 @@ Need help with any specific deployment? Let me know!
 
 ---
 
-**Built for Tesano Campus Institute**  
+**Built for AIFSP**  
 *Simplifying campus access, one QR code at a time* 🏛️

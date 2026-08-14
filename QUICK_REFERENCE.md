@@ -200,4 +200,4 @@ The system is configured and running correctly.
 **Network IP:** 192.168.110.197  
 **Version:** 1.0.0
 
-🏛️ **Tesano Campus Institute**
+🏛️ **AIFSP**
