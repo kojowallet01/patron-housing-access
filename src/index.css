@@ -3043,6 +3043,8 @@ tr:hover {
   gap: 14px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   transition: box-shadow 0.15s ease, transform 0.15s ease;
+  text-decoration: none;
+  color: inherit;
 }
 
 .admin-stat-card:hover {

@@ -20,6 +20,7 @@ import MonthlySignups from './pages/reports/MonthlySignups'
 import AllTimeSignups from './pages/reports/AllTimeSignups'
 import ByPurpose from './pages/reports/ByPurpose'
 import { toggleTheme } from './theme'
+import ErrorBoundary from './ErrorBoundary'
 
 function ThemeToggle() {
   const [theme, setTheme] = useState(document.documentElement.getAttribute('data-theme') || 'light')
@@ -61,7 +62,8 @@ function App() {
   return (
     <BrowserRouter>
       <ThemeToggle />
-      <Routes>
+      <ErrorBoundary>
+        <Routes>
         <Route path="/home" element={<Home />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route
@@ -108,7 +110,8 @@ function App() {
         <Route path="/entrance" element={<Entrance />} />
         <Route path="/" element={<Entrance />} />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </ErrorBoundary>
     </BrowserRouter>
   )
 }

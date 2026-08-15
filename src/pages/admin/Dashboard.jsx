@@ -79,11 +79,11 @@ function Dashboard() {
   }
 
   const statCards = [
-    { label: 'Total Students', value: stats?.totalStudents ?? '--', icon: Users, tone: 'indigo' },
-    { label: "Today's Visits", value: stats?.todayVisits ?? '--', icon: DoorOpen, tone: 'emerald' },
-    { label: 'This Week', value: stats?.thisWeekVisits ?? '--', icon: CalendarDays, tone: 'amber' },
-    { label: 'This Month', value: stats?.thisMonthVisits ?? '--', icon: CalendarRange, tone: 'sky' },
-    { label: 'All-Time Visits', value: stats?.totalVisits ?? '--', icon: History, tone: 'violet' }
+    { label: 'Total Students', value: stats?.totalStudents ?? '--', icon: Users, tone: 'indigo', path: '/admin/students' },
+    { label: "Today's Visits", value: stats?.todayVisits ?? '--', icon: DoorOpen, tone: 'emerald', path: '/admin/visitors' },
+    { label: 'This Week', value: stats?.thisWeekVisits ?? '--', icon: CalendarDays, tone: 'amber', path: '/admin/visitors' },
+    { label: 'This Month', value: stats?.thisMonthVisits ?? '--', icon: CalendarRange, tone: 'sky', path: '/admin/visitors' },
+    { label: 'All-Time Visits', value: stats?.totalVisits ?? '--', icon: History, tone: 'violet', path: '/admin/visitors' }
   ]
 
   const reportItems = [
@@ -115,7 +115,7 @@ function Dashboard() {
 
       <div className="admin-stats-grid">
         {statCards.map((card) => (
-          <div key={card.label} className={`admin-stat-card admin-stat-${card.tone}`}>
+          <Link key={card.label} to={card.path} className={`admin-stat-card admin-stat-${card.tone}`} title={`View ${card.label}`}>
             <div className="admin-stat-icon">
               <card.icon size={22} strokeWidth={2} />
             </div>
@@ -123,7 +123,7 @@ function Dashboard() {
               <span className="admin-stat-label">{card.label}</span>
               <span className="admin-stat-value">{card.value}</span>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
 
