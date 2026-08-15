@@ -145,6 +145,35 @@ test('re-scanning a token preserves the original check-in time', async () => {
   assert.equal(visits[0].verified_at, firstVerifiedAt);
 });
 
+test('generate-token response includes verified visit history', async () => {
+  const reg = await api('POST', '/api/register', {
+    name: 'History Student',
+    phone: '+233 20 000 0003',
+    campus: 'TESANO CAMPUS'
+  });
+  assert.equal(reg.status, 200);
+
+  const gen = await api('POST', '/api/generate-token', {
+    phone: '+233 20 000 0003',
+    campus: 'TESANO CAMPUS'
+  });
+  assert.equal(gen.status, 200);
+
+  const verify = await api('POST', '/api/verify-token', {
+    token: gen.data.token,
+    campus: 'TESANO CAMPUS'
+  });
+  assert.equal(verify.status, 200);
+
+  const gen2 = await api('POST', '/api/generate-token', {
+    phone: '+233 20 000 0003',
+    campus: 'TESANO CAMPUS'
+  });
+  assert.equal(gen2.status, 200);
+  assert.ok(Array.isArray(gen2.data.recentVisits));
+  assert.ok(gen2.data.recentVisits.some((v) => v.used_at === verify.data.verifiedAt));
+});
+
 test('admin students list includes the registered student', async () => {
   const { status, data } = await api('GET', '/api/admin/students', null, SUPER_ADMIN_HEADERS);
   assert.equal(status, 200);

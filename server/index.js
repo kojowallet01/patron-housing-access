@@ -330,13 +330,15 @@ async function createTokenForStudent(studentId, campusName = DEFAULT_CAMPUS) {
 
 async function buildTokenResponse(tokenData, student) {
   const tokenQR = await QRCode.toDataURL(tokenData.token);
+  const recentVisits = await listTokensForStudent(student.id);
   return {
     success: true,
     student: { name: student.name, phone: student.phone, campus: student.campus },
     token: tokenData.token,
     tokenQR,
     validDate: tokenData.valid_date,
-    campus: student.campus
+    campus: student.campus,
+    recentVisits: recentVisits.slice(0, 10)
   };
 }
 

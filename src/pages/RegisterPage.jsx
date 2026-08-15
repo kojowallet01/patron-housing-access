@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react'
 import { API_URL, CAMPUS_INSTITUTE_NAME, DEFAULT_CAMPUS } from '../config'
 
+function formatVisitDate(iso) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) +
+    ' • ' + date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
 function RegisterPage() {
   const [formData, setFormData] = useState({
     name: '',
@@ -120,17 +127,19 @@ function RegisterPage() {
       const registerData = await registerResponse.json()
 
       let tokenData
+      let returning = false
       if (registerResponse.ok) {
         tokenData = await requestToken(phone)
-      } else if (registerData.error?.includes('Phone already registered')) {
-        setStatusMessage('Phone already registered for this campus. Generating your access token now...')
+      } else if (registerData.error?.includes('already registered')) {
+        returning = true
+        setStatusMessage('Already verified — generating your access code...')
         tokenData = await requestToken(phone)
       } else {
         setError(registerData.error || 'Registration failed')
         return
       }
 
-      setToken(tokenData)
+      setToken({ ...tokenData, returning })
     } catch (err) {
       setError(err.message || 'Network error. Please try again.')
     } finally {
@@ -170,8 +179,10 @@ function RegisterPage() {
 
         <div className="token-success">
           <div className="success-icon">✅</div>
-          <h2>Registration Complete!</h2>
-          <p className="welcome-text">Welcome, <strong>{token.student.name}</strong></p>
+          <h2>{token.returning ? 'Already Verified!' : 'Registration Complete!'}</h2>
+          <p className="welcome-text">
+            {token.returning ? 'Welcome back, ' : 'Welcome, '}<strong>{token.student.name}</strong>
+          </p>
           <p className="subtitle">{token.campus || campusName}</p>
 
           <div className="token-qr-box">
@@ -192,6 +203,21 @@ function RegisterPage() {
             <p className="token-id">{token.token}</p>
             <p className="valid-date">Valid for: {new Date().toLocaleDateString()}</p>
           </div>
+
+          {Array.isArray(token.recentVisits) && token.recentVisits.length > 0 && (
+            <div className="visit-history">
+              <h3>Your Recent Entries</h3>
+              <ul className="visit-list">
+                {token.recentVisits.map((visit) => (
+                  <li key={visit.id} className="visit-item">
+                    <span className="visit-dot" aria-hidden="true" />
+                    <span className="visit-when">{formatVisitDate(visit.used_at)}</span>
+                    <span className="visit-campus">{visit.campus}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="token-actions">
             <button className="btn btn-secondary" onClick={handleCopyToken}>
