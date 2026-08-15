@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { mkdirSync, statSync } from 'fs';
+import { mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 
@@ -7,7 +7,10 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 export const useSupabase = Boolean(SUPABASE_URL && SUPABASE_SERVICE_KEY);
 
-const DB_FILE = process.env.DB_PATH || path.join(process.cwd(), 'aifsp.db');
+const DB_FILE = process.env.DB_PATH || path.join(import.meta.dirname, '..', 'aifsp.db');
+
+const BACKUP_DIR = path.join(path.dirname(DB_FILE), 'backups');
+const MAX_BACKUPS = 20;
 
 // ---------------------------------------------------------------------------
 // SQLite backend (local development / fallback)
@@ -21,6 +24,23 @@ try {
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
+
+async function snapshotDatabase() {
+  if (useSupabase) return;
+  try {
+    mkdirSync(BACKUP_DIR, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const dest = path.join(BACKUP_DIR, `aifsp-${stamp}.db`);
+    await sqlite.backup(dest);
+    const files = readdirSync(BACKUP_DIR).filter((f) => f.startsWith('aifsp-')).sort();
+    while (files.length > MAX_BACKUPS) {
+      unlinkSync(path.join(BACKUP_DIR, files.shift()));
+    }
+    console.log(`[backup] database snapshot saved to backups/${path.basename(dest)}`);
+  } catch (error) {
+    console.warn('[backup] snapshot failed:', error.message || error);
+  }
+}
 
 function createSqliteTables() {
   sqlite.prepare(`CREATE TABLE IF NOT EXISTS settings (
@@ -833,6 +853,11 @@ export function closeDatabase() {
 
 export async function init() {
   createSqliteTables();
+
+  if (!useSupabase && sqlite) {
+    await snapshotDatabase();
+    setInterval(() => { snapshotDatabase(); }, 24 * 60 * 60 * 1000).unref();
+  }
 
   let schemaOk = true;
   if (useSupabase && supabase) {

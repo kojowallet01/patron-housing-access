@@ -14,7 +14,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-const DB_FILE = process.env.DB_PATH || path.join(process.cwd(), 'aifsp.db');
+const DB_FILE = process.env.DB_PATH || path.join(import.meta.dirname, '..', 'aifsp.db');
 const db = new Database(DB_FILE, { readonly: true });
 
 async function upsertRows(table, rows, conflictKey) {
