@@ -5199,19 +5199,7 @@ html[data-theme="dark"] .admin-qr-date-picker label {
   color: #94a3b8;
 }
 
-/* ---- Modals ---- */
-html[data-theme="dark"] .admin-modal-close {
-  color: #94a3b8;
-}
-
-html[data-theme="dark"] .admin-modal-close:hover {
-  background: #273449;
-  color: #e2e8f0;
-}
-
-html[data-theme="dark"] .admin-modal-subtitle {
-  color: #94a3b8;
-}
+/* ---- Modals stay light for readability ---- */
 
 /* ---- Empty states & misc ---- */
 html[data-theme="dark"] .admin-empty-state {
@@ -5276,4 +5264,165 @@ html[data-theme="dark"] .admin-back-link:hover {
   .theme-toggle {
     display: none !important;
   }
+}
+
+/* ============================================================
+   DARK MODE — CONTRAST PASS
+   Fixes dark text left behind by the light theme on darkened
+   backgrounds so every label is clearly readable.
+   ============================================================ */
+
+/* ---- Security page (AccessQR) sits on the dark role-gate bg ---- */
+html[data-theme="dark"] .access-qr-heading {
+  color: #f1f5f9;
+}
+
+html[data-theme="dark"] .access-step {
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .entrance-hint {
+  color: #94a3b8;
+}
+
+/* ---- Legacy admin page: data table, tabs, search ---- */
+html[data-theme="dark"] .data-table {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+html[data-theme="dark"] .data-table thead th {
+  background: #273449;
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .data-table tbody td {
+  color: #cbd5e1;
+  border-bottom-color: #2b3b52;
+}
+
+html[data-theme="dark"] .data-table tbody tr:nth-child(even) {
+  background: #16223a;
+}
+
+html[data-theme="dark"] .data-table tbody tr:hover {
+  background: #273449;
+}
+
+html[data-theme="dark"] .no-data {
+  color: #94a3b8;
+}
+
+html[data-theme="dark"] .tab {
+  background: #273449;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .tab:hover {
+  border-color: #667eea;
+  color: #a5b4fc;
+}
+
+html[data-theme="dark"] .tab.active {
+  background: #667eea;
+  border-color: #667eea;
+  color: #ffffff;
+}
+
+html[data-theme="dark"] .search-input {
+  background: #0f172a;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+html[data-theme="dark"] .search-input::placeholder {
+  color: #64748b;
+}
+
+/* ---- Legacy admin Analytics ---- */
+html[data-theme="dark"] .analytics-header {
+  border-bottom-color: #334155;
+}
+
+html[data-theme="dark"] .analytics-header h3 {
+  color: #e2e8f0;
+}
+
+html[data-theme="dark"] .analytics-range {
+  background: #0f172a;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+html[data-theme="dark"] .analytics-card {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+html[data-theme="dark"] .analytics-card span {
+  color: #94a3b8;
+}
+
+html[data-theme="dark"] .chart-card {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+html[data-theme="dark"] .chart-card h4 {
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .hour-count {
+  color: #94a3b8;
+}
+
+html[data-theme="dark"] .hour-labels {
+  color: #94a3b8;
+}
+
+html[data-theme="dark"] .purpose-bar-track {
+  background: #273449;
+}
+
+html[data-theme="dark"] .purpose-label {
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .purpose-count {
+  color: #a5b4fc;
+}
+
+/* ---- Legacy admin sidebar cards (QR status / activity) ---- */
+html[data-theme="dark"] .sidebar-card-header {
+  border-bottom-color: #334155;
+}
+
+html[data-theme="dark"] .sidebar-card-header h3 {
+  color: #e2e8f0;
+}
+
+html[data-theme="dark"] .sidebar-card-header p {
+  color: #94a3b8;
+}
+
+html[data-theme="dark"] .report-link-btn {
+  background: #273449;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+html[data-theme="dark"] .report-link-btn:hover {
+  border-color: #4f46e5;
+  background: #334155;
+}
+
+html[data-theme="dark"] .status-row {
+  border-bottom-color: #334155;
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .status-active {
+  background: #052e1f;
+  color: #34d399;
 }
