@@ -204,6 +204,11 @@ test('admin export returns backup structure', async () => {
   assert.ok(data.students.some((s) => s.name === 'Test Student'));
 });
 
+test('export requires super admin', async () => {
+  const { status } = await api('GET', '/api/admin/export');
+  assert.equal(status, 403);
+});
+
 test('restore requires super admin', async () => {
   const { status } = await api('POST', '/api/admin/restore', { students: [], tokens: [], settings: [] });
   assert.equal(status, 403);

@@ -301,17 +301,17 @@ function Settings() {
             </div>
           </div>
           <div className="admin-settings-actions">
-            <button
-              type="button"
-              className="admin-btn admin-btn-primary"
-              onClick={handleBackup}
-              disabled={backingUp}
-            >
-              <Download size={16} strokeWidth={2} />
-              {backingUp ? 'Creating backup...' : 'Download Full Backup'}
-            </button>
             {isSuperAdmin && (
               <>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-primary"
+                  onClick={handleBackup}
+                  disabled={backingUp}
+                >
+                  <Download size={16} strokeWidth={2} />
+                  {backingUp ? 'Creating backup...' : 'Download Full Backup'}
+                </button>
                 <input
                   ref={restoreInputRef}
                   type="file"

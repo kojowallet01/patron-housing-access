@@ -415,7 +415,7 @@ function Students() {
           </div>
           <div className="admin-toolbar-actions">
             <span className="admin-row-count">{filteredStudents.length} students</span>
-            <button type="button" className="admin-btn admin-btn-outline" onClick={openQrSheet}>
+            <button type="button" className="admin-btn admin-btn-outline" onClick={() => openQrSheet()}>
               <QrCode size={16} strokeWidth={2} />
               QR Codes
             </button>

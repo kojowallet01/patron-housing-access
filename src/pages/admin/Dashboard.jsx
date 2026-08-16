@@ -27,6 +27,7 @@ function Dashboard() {
   const [stats, setStats] = useState(null)
   const [recentActivity, setRecentActivity] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   const fetchData = useCallback(async () => {
     try {
@@ -36,13 +37,19 @@ function Dashboard() {
         fetch(`${API_URL}/admin/visits?range=all`, { headers: authHeaders })
       ])
 
+      if (!statsRes.ok || !visitsRes.ok) {
+        throw new Error('Dashboard request failed')
+      }
+
       const statsData = await statsRes.json()
       const visitsData = await visitsRes.json()
 
       setStats(statsData)
       setRecentActivity((visitsData.students || []).slice(0, 10))
+      setError('')
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
+      setError('Unable to load dashboard data. The connection or session may have expired.')
     } finally {
       setLoading(false)
     }
@@ -92,10 +99,23 @@ function Dashboard() {
     { title: 'Monthly Signups', path: '/admin/reports/monthly', desc: 'Signups for this month', icon: FileText }
   ]
 
-  if (loading || !stats) {
+  if (loading) {
     return (
       <div className="admin-page-container">
         <div className="admin-loading-card">Loading dashboard...</div>
+      </div>
+    )
+  }
+
+  if (!stats) {
+    return (
+      <div className="admin-page-container">
+        <div className="admin-loading-card">
+          <p>{error || 'Unable to load dashboard data.'}</p>
+          <button type="button" className="admin-btn admin-btn-primary" onClick={fetchData} style={{ marginTop: '12px' }}>
+            Retry
+          </button>
+        </div>
       </div>
     )
   }

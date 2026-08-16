@@ -8,6 +8,7 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
+import { randomInt } from 'crypto';
 import {
   init,
   getSettingSync,
@@ -290,11 +291,7 @@ function buildBaseUrl(req) {
 }
 
 function generateAccessToken() {
-  let token = '';
-  for (let i = 0; i < 4; i += 1) {
-    token += Math.floor(Math.random() * 10);
-  }
-  return token;
+  return String(randomInt(0, 10000)).padStart(4, '0');
 }
 
 async function createTokenForStudent(studentId, campusName = DEFAULT_CAMPUS) {
@@ -1022,6 +1019,9 @@ app.get('/api/admin/students/:id/visits', requireAdminAuth, async (req, res) => 
 
 app.get('/api/admin/export', requireAdminAuth, async (req, res) => {
   try {
+    if (!req.isSuperAdmin) {
+      return res.status(403).json({ error: 'Super admin access required.' });
+    }
     const data = await exportAllData();
     res.setHeader('Content-Disposition', `attachment; filename="aifsp-backup-${new Date().toISOString().slice(0, 10)}.json"`);
     res.json(data);
