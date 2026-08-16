@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "server": "node server/index.js",
+    "server": "node --env-file-if-exists=.env server/index.js",
     "client": "vite",
     "build": "vite build",
     "test": "node --test server/test/*.test.js",

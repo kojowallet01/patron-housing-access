@@ -19,4 +19,4 @@ RUN npm ci --omit=dev \
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
 EXPOSE 3001
-CMD ["node", "server/index.js"]
+CMD ["node", "--env-file-if-exists=.env", "server/index.js"]
