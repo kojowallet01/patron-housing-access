@@ -9,7 +9,7 @@ Your application is **production-ready**! Here's what you need to consider:
 - ✅ Docker configuration ready
 - ✅ GitHub Actions CI/CD pipeline configured
 - ✅ Mobile-responsive design
-- ✅ JSON file database (simple, but works)
+- ✅ SQLite (local dev) + Supabase Postgres (production, durable across redeploys)
 
 ---
 

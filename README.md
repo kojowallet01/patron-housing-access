@@ -16,7 +16,7 @@ A complete web-based QR code sign-in system for managing student access to AIFSP
 
 1. **Campus displays QR code at entrance** (on a tablet or screen)
 2. **Student scans QR code** → automatically opens registration page on their phone
-3. **Student registers** → fills name, email, and optional details
+3. **Student registers** → fills name, phone, and purpose
 4. **Student receives access token** → immediately displayed as QR code on their phone
 5. **Student shows token to security** → security scans/verifies token
 6. **Access granted!** → student enters campus
