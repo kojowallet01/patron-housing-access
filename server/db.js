@@ -851,6 +851,18 @@ export function closeDatabase() {
   }
 }
 
+async function cleanupExpiredSessions() {
+  const now = new Date().toISOString();
+  if (supabase) {
+    const { error } = await supabase.from('sessions').delete().lt('expires_at', now);
+    if (error) console.warn('[cleanup] session cleanup failed:', error.message || error);
+    return;
+  }
+  if (sqlite) {
+    sqlite.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
+  }
+}
+
 export async function init() {
   createSqliteTables();
 
@@ -865,6 +877,8 @@ export async function init() {
   }
 
   await loadAllSettings();
+  await cleanupExpiredSessions();
+  setInterval(() => { cleanupExpiredSessions(); }, 24 * 60 * 60 * 1000).unref();
 
   if (useSupabase && supabase && schemaOk) {
     console.log('Persistence: Supabase Postgres (durable across redeploys)');

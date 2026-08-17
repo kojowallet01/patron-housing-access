@@ -62,3 +62,18 @@ export async function logoutSession() {
   }
   clearSession()
 }
+
+export function installAuthInterceptor() {
+  const originalFetch = window.fetch
+  window.fetch = async (...args) => {
+    const response = await originalFetch(...args)
+    if (response.status === 401) {
+      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || ''
+      if (url.includes('/api/')) {
+        clearSession()
+        window.location.href = '/'
+      }
+    }
+    return response
+  }
+}

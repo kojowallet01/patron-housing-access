@@ -15,7 +15,7 @@ import {
   X
 } from 'lucide-react'
 import { CAMPUS_INSTITUTE_NAME, setSelectedCampus, getSelectedCampus } from '../../config'
-import { validateSession, logoutSession } from '../../auth'
+import { validateSession, logoutSession, clearSession } from '../../auth'
 
 export const AdminContext = React.createContext(null)
 
@@ -39,17 +39,20 @@ function AdminLayout() {
   useEffect(() => {
     let active = true
 
-    validateSession().then((session) => {
-      if (!active) return
-      if (session.valid) {
+      validateSession().then((session) => {
+        if (!active) return
+        if (!session.valid) {
+          clearSession()
+          window.location.href = '/'
+          return
+        }
         setIsSuperAdmin(Boolean(session.isSuperAdmin))
         if (!session.isSuperAdmin && session.campus) {
           setActiveCampus(session.campus)
           setSelectedCampus(session.campus)
         }
-      }
-      setSessionChecked(true)
-    })
+        setSessionChecked(true)
+      })
 
     return () => {
       active = false

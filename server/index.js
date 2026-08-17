@@ -180,14 +180,10 @@ const authLimiter = rateLimit({
   message: { error: 'Too many authentication attempts, please try again later.' }
 });
 
-app.use('/api', (req, res, next) => {
-  if (req.path.startsWith('/admin') || req.path.startsWith('/super-admin')) {
-    return next();
-  }
-  return apiLimiter(req, res, next);
-});
+app.use('/api', apiLimiter);
 app.use('/api/register', authLimiter);
 app.use('/api/verify-token', authLimiter);
+app.use('/api/validate-login', authLimiter);
 
 function currentDateString() {
   return new Date().toISOString().split('T')[0];

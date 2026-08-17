@@ -46,17 +46,8 @@ create index if not exists idx_access_tokens_student on public.access_tokens (st
 create index if not exists idx_access_tokens_token on public.access_tokens (token, valid_date);
 create index if not exists idx_sessions_expires on public.sessions (expires_at);
 
--- The server uses the Supabase service role key, so it bypasses Row Level
--- Security. RLS is intentionally left disabled for these tables; if you want
--- belt-and-suspenders protection, enable RLS and add a policy for the
--- service role (service_role always bypasses RLS in Supabase).
-alter table public.settings enable row level security;
-alter table public.students enable row level security;
-alter table public.access_tokens enable row level security;
-alter table public.sessions enable row level security;
-
--- Allow only the service role (server) to access these tables.
-create policy "service_role_all" on public.settings for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-create policy "service_role_all" on public.students for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-create policy "service_role_all" on public.access_tokens for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-create policy "service_role_all" on public.sessions for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+-- RLS is intentionally left disabled. All traffic is routed through the
+-- Express API layer, which uses the service_role key (bypasses RLS) and
+-- authenticates every request with session tokens or campus passwords.
+-- If you want belt-and-suspenders protection, enable RLS and add policies
+-- for the service_role role in the Supabase dashboard.
