@@ -207,6 +207,7 @@ export async function setSetting(key, value) {
     const { error } = await supabase.from('settings').upsert({ key, value }, { onConflict: 'key' });
     if (error) {
       console.error('Supabase settings write failed:', error.message || error);
+      throw new Error(`Supabase settings write failed: ${error.message || 'unknown error'}`);
     }
     return;
   }

@@ -30,6 +30,7 @@ function PasswordManager() {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [confirmTarget, setConfirmTarget] = useState(null)
+  const [lastSavedAt, setLastSavedAt] = useState({})
 
   const fetchPasswordMap = useCallback(async () => {
     try {
@@ -67,6 +68,17 @@ function PasswordManager() {
   const currentValue = (role) =>
     draftPasswords[role] ?? credentialMap[role]?.[selectedCampus] ?? ''
 
+  const formatTimeAgo = (ts) => {
+    if (!ts) return ''
+    const seconds = Math.floor((Date.now() - ts) / 1000)
+    if (seconds < 5) return 'just now'
+    if (seconds < 60) return `${seconds}s ago`
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes}m ago`
+    const hours = Math.floor(minutes / 60)
+    return `${hours}h ago`
+  }
+
   const requestConfirm = (role) => {
     setConfirmTarget({ role })
   }
@@ -92,17 +104,21 @@ function PasswordManager() {
         body: JSON.stringify({ campus: selectedCampus, role, password: value })
       })
 
-      if (!response.ok) {
-        throw new Error('Failed to save password')
+      const result = await response.json().catch(() => ({}))
+
+      if (!response.ok || !result.success) {
+        const detail = result.error || `HTTP ${response.status}`
+        throw new Error(`Failed to save: ${detail}`)
       }
 
+      setLastSavedAt((prev) => ({ ...prev, [role]: Date.now() }))
       setMessage(`${role.toUpperCase()} password saved for ${selectedCampus}.`)
       setConfirmTarget(null)
       setDraftPasswords((prev) => ({ ...prev, [role]: undefined }))
       await fetchPasswordMap()
     } catch (error) {
       console.error('Error saving campus password:', error)
-      setMessage('Unable to save the password at the moment.')
+      setMessage(`Save failed: ${error.message || 'Unable to save the password.'}`)
       setConfirmTarget(null)
     }
   }
@@ -216,6 +232,9 @@ function PasswordManager() {
                 {draftPasswords[role.value] !== undefined && draftPasswords[role.value].trim() !== value.trim() && (
                   <span className="admin-password-unsaved">Unsaved change</span>
                 )}
+                {lastSavedAt[role.value] && (
+                  <span className="admin-password-saved">Saved {formatTimeAgo(lastSavedAt[role.value])}</span>
+                )}
               </div>
 
               <button
@@ -231,7 +250,7 @@ function PasswordManager() {
       </div>
 
       {message && (
-        <div className="admin-message-bar">
+        <div className={`admin-message-bar${message.startsWith('Save failed') ? ' admin-message-bar-error' : ''}`}>
           <CheckCircle2 size={18} strokeWidth={2} />
           {message}
         </div>

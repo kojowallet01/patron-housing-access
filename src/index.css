@@ -4094,6 +4094,14 @@ tr:hover {
   margin-top: 6px;
 }
 
+.admin-password-saved {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #16a34a;
+  margin-top: 4px;
+}
+
 .admin-confirm-icon {
   width: 60px;
   height: 60px;
@@ -4124,6 +4132,12 @@ tr:hover {
   padding: 14px 18px;
   border-radius: 12px;
   margin-top: 20px;
+}
+
+.admin-message-bar-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
 }
 
 /* ---- Settings ---- */
@@ -5032,6 +5046,12 @@ html[data-theme="dark"] .admin-message-bar {
   background: #052e1f;
   border-color: #065f46;
   color: #6ee7b7;
+}
+
+html[data-theme="dark"] .admin-message-bar-error {
+  background: #2d1212;
+  border-color: #7f1d1d;
+  color: #fca5a5;
 }
 
 /* ---- Admin buttons ---- */
