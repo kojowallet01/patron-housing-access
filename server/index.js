@@ -39,7 +39,8 @@ import {
   listTokensForDate,
   countVerifiedVisits,
   countVerifiedVisitsBetween,
-  countAllVerifiedVisits
+  countAllVerifiedVisits,
+  checkSupabaseHealth
 } from './db.js';
 
 const app = express();
@@ -495,6 +496,11 @@ app.post('/api/register', async (req, res) => {
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Registration failed' });
   }
+});
+
+app.get('/api/health', async (_req, res) => {
+  const status = await checkSupabaseHealth();
+  res.json({ ok: true, ...status, uptime: Math.round(process.uptime()) });
 });
 
 app.get('/api/campus-qr', async (req, res) => {

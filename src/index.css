@@ -2768,6 +2768,19 @@ tr:hover {
   padding-top: 12px;
 }
 
+.admin-sidebar-db-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #16a34a;
+  padding: 6px 14px 2px;
+}
+
+.admin-sidebar-db-status svg {
+  flex-shrink: 0;
+}
+
 .admin-sidebar-version {
   font-size: 11px;
   color: #475569;

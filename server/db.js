@@ -179,6 +179,26 @@ async function checkSupabaseSchema() {
 // Settings (cached in memory for fast hot-path auth checks)
 // ---------------------------------------------------------------------------
 let settingsCache = new Map();
+let supabaseHealthy = null;
+
+export async function checkSupabaseHealth() {
+  if (!supabase) return { configured: false, healthy: null, backend: 'sqlite' };
+  try {
+    const { error } = await supabase.from('settings').select('key').limit(1);
+    const healthy = !error;
+    supabaseHealthy = healthy;
+    if (!healthy) console.warn('[health] Supabase query failed:', error.message || error);
+    return { configured: true, healthy, backend: 'supabase' };
+  } catch (err) {
+    supabaseHealthy = false;
+    console.warn('[health] Supabase unreachable:', err.message || err);
+    return { configured: true, healthy: false, backend: 'supabase' };
+  }
+}
+
+export function getSupabaseStatus() {
+  return { configured: Boolean(supabase), healthy: supabaseHealthy, backend: supabase ? 'supabase' : 'sqlite' };
+}
 
 async function loadAllSettings() {
   if (supabase) {
@@ -204,12 +224,19 @@ export async function setSetting(key, value) {
   settingsCache.set(key, value);
 
   if (supabase) {
-    const { error } = await supabase.from('settings').upsert({ key, value }, { onConflict: 'key' });
-    if (error) {
-      console.error('Supabase settings write failed:', error.message || error);
-      throw new Error(`Supabase settings write failed: ${error.message || 'unknown error'}`);
+    let lastError;
+    for (let attempt = 0; attempt <= 1; attempt++) {
+      const { error } = await supabase.from('settings').upsert({ key, value }, { onConflict: 'key' });
+      if (!error) {
+        supabaseHealthy = true;
+        return;
+      }
+      lastError = error;
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 1000));
     }
-    return;
+    supabaseHealthy = false;
+    console.error('Supabase settings write failed:', lastError.message || lastError);
+    throw new Error(`Supabase settings write failed: ${lastError.message || 'unknown error'}`);
   }
 
   sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
@@ -881,10 +908,16 @@ export async function init() {
   await cleanupExpiredSessions();
   setInterval(() => { cleanupExpiredSessions(); }, 24 * 60 * 60 * 1000).unref();
 
-  if (useSupabase && supabase && schemaOk) {
-    console.log('Persistence: Supabase Postgres (durable across redeploys)');
-  } else if (useSupabase && supabase) {
-    console.log('Persistence: Supabase configured but tables missing — run supabase/schema.sql in the Supabase SQL Editor.');
+  if (useSupabase && supabase) {
+    const health = await checkSupabaseHealth();
+    setInterval(() => { checkSupabaseHealth(); }, 60 * 1000).unref();
+    if (health.healthy && schemaOk) {
+      console.log('Persistence: Supabase Postgres (durable across redeploys)');
+    } else if (health.healthy) {
+      console.log('Persistence: Supabase connected but tables missing — run supabase/schema.sql in the Supabase SQL Editor.');
+    } else {
+      console.log('Persistence: Supabase configured but UNREACHABLE — writes will fail. Check SUPABASE_URL and SUPABASE_SERVICE_KEY.');
+    }
   } else {
     console.log('Persistence: local SQLite (EPHEMERAL on Render — set SUPABASE_URL + SUPABASE_SERVICE_KEY for durable storage)');
   }

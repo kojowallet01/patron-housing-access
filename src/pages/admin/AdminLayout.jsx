@@ -12,9 +12,10 @@ import {
   LogOut,
   Building2,
   Menu,
-  X
+  X,
+  Database
 } from 'lucide-react'
-import { CAMPUS_INSTITUTE_NAME, setSelectedCampus, getSelectedCampus } from '../../config'
+import { API_URL, CAMPUS_INSTITUTE_NAME, setSelectedCampus, getSelectedCampus } from '../../config'
 import { validateSession, logoutSession, clearSession } from '../../auth'
 
 export const AdminContext = React.createContext(null)
@@ -34,6 +35,7 @@ function AdminLayout() {
   const [sessionChecked, setSessionChecked] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [dbStatus, setDbStatus] = useState(null)
   const location = useLocation()
 
   useEffect(() => {
@@ -62,6 +64,19 @@ function AdminLayout() {
   useEffect(() => {
     setMobileNavOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    let active = true
+    const checkHealth = () => {
+      fetch(`${API_URL}/health`)
+        .then((r) => r.json())
+        .then((data) => { if (active) setDbStatus(data) })
+        .catch(() => { if (active) setDbStatus({ configured: true, healthy: false, backend: 'supabase' }) })
+    }
+    checkHealth()
+    const interval = setInterval(checkHealth, 30000)
+    return () => { active = false; clearInterval(interval) }
+  }, [])
 
   const refresh = useCallback(() => {
     setRefreshKey((key) => key + 1)
@@ -120,6 +135,18 @@ function AdminLayout() {
           <LogOut size={18} strokeWidth={2} />
           <span>Log out</span>
         </button>
+        <div className="admin-sidebar-db-status" style={{ color: dbStatus === null ? '#94a3b8' : dbStatus.healthy ? '#16a34a' : '#dc2626' }}>
+          <Database size={12} strokeWidth={2} />
+          <span>
+            {dbStatus === null
+              ? 'Checking...'
+              : dbStatus.healthy
+                ? `${dbStatus.backend === 'supabase' ? 'Supabase' : 'SQLite'}: Connected`
+                : dbStatus.configured
+                  ? 'Supabase: Offline'
+                  : 'SQLite: Local'}
+          </span>
+        </div>
         <div className="admin-sidebar-version">v1.0 • Enterprise</div>
       </div>
     </div>
