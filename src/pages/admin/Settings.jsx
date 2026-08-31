@@ -114,7 +114,7 @@ function Settings() {
 
   const handleLogout = async () => {
     await logoutSession()
-    window.location.href = '/'
+    window.location.href = '/admin/login'
   }
 
   const handleRestoreFile = async (e) => {

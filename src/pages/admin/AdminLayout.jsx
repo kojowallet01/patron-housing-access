@@ -45,7 +45,7 @@ function AdminLayout() {
         if (!active) return
         if (!session.valid) {
           clearSession()
-          window.location.href = '/'
+          window.location.href = '/admin/login'
           return
         }
         setIsSuperAdmin(Boolean(session.isSuperAdmin))
@@ -88,7 +88,7 @@ function AdminLayout() {
 
   const handleLogout = async () => {
     await logoutSession()
-    window.location.href = '/'
+    window.location.href = '/admin/login'
   }
 
   const contextValue = useMemo(
