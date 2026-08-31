@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { API_URL, CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, CAMPUS_COLORS, getSelectedCampus, setSelectedCampus } from '../../config'
-import { setSession, validateSession } from '../../auth'
+import { setSession } from '../../auth'
 import CampusLogo from '../../components/CampusLogo'
 import { ShieldCheck, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react'
 
@@ -13,21 +13,7 @@ function AdminLogin() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
-  const [checking, setChecking] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    let active = true
-    validateSession().then((session) => {
-      if (!active) return
-      if (session.valid && ['admin', 'super-admin'].includes(session.role)) {
-        navigate('/admin', { replace: true })
-        return
-      }
-      setChecking(false)
-    })
-    return () => { active = false }
-  }, [navigate])
 
   const handleCampusSelect = (campus) => {
     setSelected(campus)
@@ -72,14 +58,6 @@ function AdminLogin() {
     } finally {
       setSubmitting(false)
     }
-  }
-
-  if (checking) {
-    return (
-      <div className="fullscreen-container auth-loading">
-        <div className="loading">Checking access...</div>
-      </div>
-    )
   }
 
   return (
