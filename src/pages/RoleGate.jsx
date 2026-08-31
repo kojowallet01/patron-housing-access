@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { API_URL, CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, CAMPUS_COLORS, getSelectedCampus, setSelectedCampus } from '../config'
 import { setSession, validateSession } from '../auth'
+import CampusLogo from '../components/CampusLogo'
 
 const ALLOWED_ROLES = {
   admin: ['admin', 'super-admin'],
@@ -120,13 +121,18 @@ function RoleGate({ role, children }) {
                 onClick={() => handleCampusSelect(campus)}
                 className={`campus-box${isSelected ? ' selected' : ''}`}
                 style={{
-                  background: CAMPUS_COLORS[campus] || '#2563eb',
-                  color: '#ffffff',
-                  borderColor: isSelected ? '#ffffff' : 'transparent',
-                  boxShadow: isSelected ? '0 0 0 3px rgba(255,255,255,0.9), 0 4px 12px rgba(0,0,0,0.2)' : '0 4px 12px rgba(0, 0, 0, 0.15)'
+                  background: '#ffffff',
+                  color: '#111827',
+                  borderColor: isSelected ? (CAMPUS_COLORS[campus] || '#2563eb') : '#d1d5db',
+                  boxShadow: isSelected ? `0 4px 12px rgba(0,0,0,0.1)` : '0 2px 6px rgba(0, 0, 0, 0.06)'
                 }}
               >
-                <span>{campus.replace(' CAMPUS', '')}</span>
+              <span className="campus-box-content">
+                <span className="campus-box-logo">
+                  <CampusLogo campus={campus} />
+                </span>
+                <span className="campus-box-label">{campus.replace(' CAMPUS', '')}</span>
+              </span>
               </button>
             )
           })}

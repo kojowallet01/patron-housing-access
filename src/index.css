@@ -1712,11 +1712,7 @@ tr:hover {
   border-radius: 14px;
   background: #ffffff;
   color: #111827;
-  padding: 18px 10px;
-  font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  padding: 16px 10px;
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
   display: flex;
@@ -1724,6 +1720,36 @@ tr:hover {
   justify-content: center;
   text-align: center;
   min-height: 72px;
+}
+
+.campus-box-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.campus-box-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 56px;
+}
+
+.campus-logo-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.campus-box-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #111827;
 }
 
 .campus-box:hover {
@@ -1954,6 +1980,22 @@ tr:hover {
   font-size: 0.9rem;
 }
 
+.campus-badge-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  color: #1f2937;
+  border-color: #e2e8f0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.campus-badge-logo .campus-logo-img {
+  max-width: 28px;
+  max-height: 28px;
+  object-fit: contain;
+}
+
 .page-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1992,6 +2034,19 @@ tr:hover {
   text-align: center;
 }
 
+.campus-picker-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+}
+
+.campus-picker-logo .campus-logo-img {
+  max-width: 130px;
+  max-height: 72px;
+  object-fit: contain;
+}
+
 .page-card h3 {
   font-size: 1.15rem;
   font-weight: 700;
@@ -2028,22 +2083,25 @@ tr:hover {
 }
 
 .campus-picker-grid .page-card {
-  border: none;
+  border: 3px solid transparent;
 }
 
 .campus-picker-grid .page-card h3,
-.campus-picker-grid .page-card p,
-.campus-picker-grid .page-card .page-url {
-  color: #ffffff;
+.campus-picker-grid .page-card p {
+  color: #1f2937;
+}
+
+.campus-picker-grid .page-card p {
+  color: #6b7280;
 }
 
 .campus-picker-grid .page-card .page-url {
-  background: rgba(255, 255, 255, 0.18);
+  background: #eef2ff;
 }
 
 .campus-picker-grid .page-card.selected-campus {
   border: none;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 16px 40px rgba(0, 0, 0, 0.32);
+  box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.35), 0 16px 40px rgba(0, 0, 0, 0.28);
 }
 
 .page-btn {
@@ -3966,6 +4024,22 @@ tr:hover {
   border-radius: 9px;
   cursor: pointer;
   transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.admin-campus-tab-logo {
+  display: inline-flex;
+  align-items: center;
+  width: 22px;
+  height: 22px;
+}
+
+.admin-campus-tab-logo .campus-logo-img {
+  max-width: 22px;
+  max-height: 22px;
+  object-fit: contain;
 }
 
 .admin-campus-tab:hover {

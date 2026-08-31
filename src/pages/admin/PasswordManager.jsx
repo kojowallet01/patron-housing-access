@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { API_URL, getCampusAuthHeaders } from '../../config'
 import { useAdminContext } from './AdminLayout'
+import CampusLogo from '../../components/CampusLogo'
 
 const CAMPUSES = ['TESANO CAMPUS', 'CANTOMENT CAMPUS', 'ASHIAMAN CAMPUS', 'LEGON CAMPUS', 'TEMA CAMPUS']
 
@@ -173,6 +174,9 @@ function PasswordManager() {
               className={`admin-campus-tab${selectedCampus === campus ? ' active' : ''}`}
               onClick={() => setSelectedCampus(campus)}
             >
+              <span className="admin-campus-tab-logo">
+                <CampusLogo campus={campus} />
+              </span>
               {campus.replace(' CAMPUS', '')}
             </button>
           ))}

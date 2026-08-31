@@ -1,4 +1,5 @@
 import { CAMPUS_INSTITUTE_NAME, CAMPUS_LIST } from '../config'
+import CampusLogo from '../components/CampusLogo'
 
 function Home() {
   return (
@@ -11,7 +12,10 @@ function Home() {
       <div className="home-content">
         <div className="home-campus-list">
           {CAMPUS_LIST.map((campus) => (
-            <div key={campus} className="campus-badge">{campus}</div>
+            <div key={campus} className="campus-badge campus-badge-logo">
+              <CampusLogo campus={campus} />
+              <span>{campus.replace(' CAMPUS', '')}</span>
+            </div>
           ))}
         </div>
 

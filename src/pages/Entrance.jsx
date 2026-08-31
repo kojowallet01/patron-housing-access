@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
-import { CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, CAMPUS_COLORS, setSelectedCampus } from '../config'
+import { CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, setSelectedCampus } from '../config'
+import CampusLogo from '../components/CampusLogo'
 
 function Entrance() {
   const navigate = useNavigate()
@@ -26,13 +27,18 @@ function Entrance() {
               onClick={() => handleCampusSelect(campus)}
               className="campus-box entrance-campus-box"
               style={{
-                background: CAMPUS_COLORS[campus] || '#2563eb',
-                color: '#ffffff',
-                borderColor: 'transparent',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+                background: '#ffffff',
+                color: '#111827',
+                borderColor: '#d1d5db',
+                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.06)'
               }}
             >
-              <span>{campus.replace(' CAMPUS', '')}</span>
+              <span className="campus-box-content">
+                <span className="campus-box-logo">
+                  <CampusLogo campus={campus} />
+                </span>
+                <span className="campus-box-label">{campus.replace(' CAMPUS', '')}</span>
+              </span>
             </button>
           ))}
         </div>

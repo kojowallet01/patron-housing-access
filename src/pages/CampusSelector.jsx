@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, CAMPUS_COLORS, getSelectedCampus, setSelectedCampus } from '../config'
 import { validateSession } from '../auth'
+import CampusLogo from '../components/CampusLogo'
 
 function CampusSelector() {
   const [selectedCampus, setSelected] = useState(getSelectedCampus())
@@ -40,13 +41,15 @@ function CampusSelector() {
               key={campus}
               className={`page-card campus-picker-card ${selectedCampus === campus ? 'selected-campus' : ''}`}
               style={{
-                background: CAMPUS_COLORS[campus] || '#2563eb',
-                color: '#ffffff',
-                borderColor: 'transparent'
+                background: '#ffffff',
+                color: '#1f2937',
+                borderColor: selectedCampus === campus ? (CAMPUS_COLORS[campus] || '#28a745') : 'transparent'
               }}
               onClick={() => handleSelect(campus)}
             >
-              <div className="page-icon">📍</div>
+              <div className="page-icon campus-picker-logo">
+                <CampusLogo campus={campus} />
+              </div>
               <h3>{campus}</h3>
               <p>Open admin and security dashboard for this campus</p>
               <div className="page-url">{selectedCampus === campus ? 'Current selection' : 'Switch to this campus'}</div>
