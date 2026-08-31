@@ -7,11 +7,16 @@ const CAMPUS_LOGO_FILES = {
   'TEMA CAMPUS': '/logo-tema.png'
 }
 
+const CAMPUS_LOGO_BG = {
+  ...CAMPUS_COLORS,
+  'CANTOMENT CAMPUS': '#831843'
+}
+
 function CampusLogo({ campus, className = '', style = {}, ...props }) {
   const file = CAMPUS_LOGO_FILES[campus]
   if (!file) return null
 
-  const bg = CAMPUS_COLORS[campus]
+  const bg = CAMPUS_LOGO_BG[campus]
   return (
     <span
       className={`campus-logo-bg ${className}`}
