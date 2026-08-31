@@ -3081,6 +3081,13 @@ tr:hover {
   gap: 8px;
 }
 
+.admin-login-mode-three .admin-login-mode-btn {
+  flex: 1;
+  padding: 11px 6px;
+  font-size: 12px;
+  gap: 6px;
+}
+
 .admin-login-mode-btn {
   flex: 1;
   display: inline-flex;

@@ -3,13 +3,19 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { API_URL, CAMPUS_INSTITUTE_NAME, CAMPUS_LIST, CAMPUS_COLORS, getSelectedCampus, setSelectedCampus } from '../../config'
 import { setSession } from '../../auth'
 import CampusLogo from '../../components/CampusLogo'
-import { ShieldCheck, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react'
+import { ShieldCheck, Lock, UserShield, Eye, EyeOff, ArrowLeft } from 'lucide-react'
+
+const ACCESS_LEVELS = [
+  { value: 'admin', label: 'Admin', icon: ShieldCheck, dest: '/admin' },
+  { value: 'super-admin', label: 'Super Admin', icon: Lock, dest: '/admin' },
+  { value: 'security', label: 'Security', icon: UserShield, dest: '/security' }
+]
 
 function AdminLogin() {
   const navigate = useNavigate()
   const location = useLocation()
   const [selectedCampus, setSelected] = useState(getSelectedCampus())
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [accessLevel, setAccessLevel] = useState('admin')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -32,7 +38,7 @@ function AdminLogin() {
     setSubmitting(true)
     setError('')
     try {
-      const role = isSuperAdmin ? 'super-admin' : 'admin'
+      const role = accessLevel
       const response = await fetch(`${API_URL}/validate-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -40,10 +46,9 @@ function AdminLogin() {
       })
       const result = await response.json()
 
+      const level = ACCESS_LEVELS.find((l) => l.value === role)
       if (!response.ok || !result.valid || !result.sessionToken) {
-        setError(isSuperAdmin
-          ? 'Invalid super admin password for the selected campus.'
-          : 'Invalid admin password for the selected campus.')
+        setError(`${level ? level.label : 'Access'} password is invalid for the selected campus.`)
         return
       }
 
@@ -51,9 +56,9 @@ function AdminLogin() {
       setSelectedCampus(result.campus)
 
       const from = location.state?.from
-      navigate(from || '/admin', { replace: true })
+      navigate(from || level.dest, { replace: true })
     } catch (loginError) {
-      console.error('Admin login failed:', loginError)
+      console.error('Login failed:', loginError)
       setError('Unable to validate login right now. Please try again.')
     } finally {
       setSubmitting(false)
@@ -71,7 +76,7 @@ function AdminLogin() {
         <header className="login-header admin-login-header">
           <img src="/logo.png" alt="AIFSP" className="login-logo" />
           <h1>{CAMPUS_INSTITUTE_NAME}</h1>
-          <p>Admin sign in</p>
+          <p>Staff sign in</p>
         </header>
 
         <div className="admin-login-body">
@@ -99,23 +104,22 @@ function AdminLogin() {
           </div>
 
           <label className="admin-login-label">Access level</label>
-          <div className="admin-login-mode">
-            <button
-              type="button"
-              className={`admin-login-mode-btn${!isSuperAdmin ? ' active' : ''}`}
-              onClick={() => setIsSuperAdmin(false)}
-            >
-              <ShieldCheck size={16} strokeWidth={2} />
-              Admin
-            </button>
-            <button
-              type="button"
-              className={`admin-login-mode-btn${isSuperAdmin ? ' active' : ''}`}
-              onClick={() => setIsSuperAdmin(true)}
-            >
-              <Lock size={16} strokeWidth={2} />
-              Super Admin
-            </button>
+          <div className="admin-login-mode admin-login-mode-three">
+            {ACCESS_LEVELS.map((level) => {
+              const Icon = level.icon
+              const isActive = accessLevel === level.value
+              return (
+                <button
+                  key={level.value}
+                  type="button"
+                  className={`admin-login-mode-btn${isActive ? ' active' : ''}`}
+                  onClick={() => setAccessLevel(level.value)}
+                >
+                  <Icon size={16} strokeWidth={2} />
+                  {level.label}
+                </button>
+              )
+            })}
           </div>
 
           <form onSubmit={handleSubmit}>
