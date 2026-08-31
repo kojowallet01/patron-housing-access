@@ -21,12 +21,12 @@ import { validateSession, logoutSession, clearSession } from '../../auth'
 export const AdminContext = React.createContext(null)
 
 const NAV_ITEMS = [
-  { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { path: '/admin/students', label: 'Students', icon: Users, end: false },
-  { path: '/admin/visitors', label: 'Visitors', icon: UserCheck, end: false },
-  { path: '/admin/security', label: 'Security', icon: ShieldCheck, end: false },
-  { path: '/admin/reports', label: 'Reports', icon: BarChart3, end: false },
-  { path: '/admin/settings', label: 'Settings', icon: Settings, end: false }
+  { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true, bottom: true },
+  { path: '/admin/students', label: 'Students', icon: Users, end: false, bottom: true },
+  { path: '/admin/visitors', label: 'Visitors', icon: UserCheck, end: false, bottom: true },
+  { path: '/admin/security', label: 'Security', icon: ShieldCheck, end: false, bottom: true },
+  { path: '/admin/reports', label: 'Reports', icon: BarChart3, end: false, bottom: true },
+  { path: '/admin/settings', label: 'Settings', icon: Settings, end: false, bottom: false }
 ]
 
 function AdminLayout() {
@@ -207,6 +207,20 @@ function AdminLayout() {
           </AdminContext.Provider>
         </main>
       </div>
+
+      <nav className="admin-bottom-nav" aria-label="Mobile navigation">
+        {NAV_ITEMS.filter((item) => item.bottom !== false).map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.end}
+            className={({ isActive }) => `admin-bottom-nav-item${isActive ? ' active' : ''}`}
+          >
+            <item.icon size={20} strokeWidth={2} />
+            <span>{item.label}</span>
+          </NavLink>
+        ))}
+      </nav>
     </div>
   )
 }
