@@ -8,6 +8,7 @@ import Home from './pages/Home'
 import CampusSelector from './pages/CampusSelector'
 import RoleGate from './pages/RoleGate'
 import AdminLayout from './pages/admin/AdminLayout'
+import AdminLogin from './pages/admin/AdminLogin'
 import Dashboard from './pages/admin/Dashboard'
 import Students from './pages/admin/Students'
 import Visitors from './pages/admin/Visitors'
@@ -79,6 +80,7 @@ function App() {
           )}
         />
         <Route path="/campus-selector" element={<CampusSelector />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
         <Route
           path="/admin"
           element={(

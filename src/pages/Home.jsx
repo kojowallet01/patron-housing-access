@@ -36,11 +36,11 @@ function Home() {
             <button className="page-btn">Open</button>
           </div>
 
-          <div className="page-card admin-card" onClick={() => window.location.href = '/admin'}>
+          <div className="page-card admin-card" onClick={() => window.location.href = '/admin/login'}>
             <div className="page-icon">📊</div>
             <h3>Admin Dashboard</h3>
             <p>Monitor campus visitors and statistics</p>
-            <div className="page-url">localhost:3000/admin</div>
+            <div className="page-url">localhost:3000/admin/login</div>
             <button className="page-btn">Open</button>
           </div>
         </div>
