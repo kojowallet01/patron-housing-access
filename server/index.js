@@ -43,6 +43,7 @@ import {
   getRetention,
   checkSupabaseHealth
 } from './db.js';
+import { sendSingle, sendBulk, health as smsHealth, isSmsEnabled, getConfig as getSmsConfig, fillTemplate } from './sms.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -445,6 +446,18 @@ function hasConfiguredSecurityAuth(campus) {
   );
 }
 
+async function sendWelcomeSms(student) {
+  const cfg = getSmsConfig();
+  if (!cfg.enabled || !cfg.welcomeEnabled || !cfg.apiKey) return;
+  const campusName = String(student.campus || DEFAULT_CAMPUS);
+  const message = fillTemplate(cfg.welcomeTemplate, {
+    name: student.name || '',
+    campus: campusName,
+    phone: student.phone || ''
+  });
+  await sendSingle({ to: student.phone, message });
+}
+
 app.get('/api', (req, res) => {
   res.json({
     message: `${CAMPUS_INSTITUTE_NAME} API is available`,
@@ -460,7 +473,8 @@ app.get('/api', (req, res) => {
       '/api/admin/students',
       '/api/admin/stats',
       '/api/admin/visits',
-      '/api/admin/retention'
+      '/api/admin/retention',
+      '/api/sms/status'
     ]
   });
 });
@@ -492,6 +506,8 @@ app.post('/api/register', async (req, res) => {
     };
 
     await insertStudent(student);
+
+    sendWelcomeSms(student).catch(() => {});
 
     res.json({ success: true, message: 'Registration successful', studentId: student.id, campus: student.campus });
   } catch (error) {
@@ -862,6 +878,31 @@ app.get('/api/admin/retention', requireAdminAuth, async (req, res) => {
   } catch (error) {
     console.error('Retention query error:', error);
     res.status(500).json({ error: 'Failed to fetch retention data' });
+  }
+});
+
+app.get('/api/sms/status', requireAdminAuth, async (_req, res) => {
+  res.json({ ok: true, sms: smsHealth() });
+});
+
+app.post('/api/sms/send', requireAdminAuth, async (req, res) => {
+  try {
+    const cfg = getSmsConfig();
+    if (!cfg.enabled || !cfg.apiKey) {
+      return res.status(503).json({ error: 'SMS is not configured. Add SMS_PROVIDER/SMS_API_KEY to use this feature.' });
+    }
+    const { recipients, message, from } = req.body;
+    if (!Array.isArray(recipients) || recipients.length === 0) {
+      return res.status(400).json({ error: 'recipients must be a non-empty array' });
+    }
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+    const result = await sendBulk({ recipients, message, from: from || cfg.senderId });
+    res.json({ ok: true, sms: result });
+  } catch (error) {
+    console.error('SMS send error:', error);
+    res.status(500).json({ error: 'Failed to send SMS' });
   }
 });
 

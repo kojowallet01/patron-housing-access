@@ -322,3 +322,17 @@ test('retention endpoint classifies students by visit recency', async () => {
   assert.ok(data.summary.total >= students.length);
   assert.equal(data.summary.returning >= 2, true);
 });
+
+test('SMS status reports disabled when not configured', async () => {
+  const { status, data } = await api('GET', '/api/sms/status', null, SUPER_ADMIN_HEADERS);
+  assert.equal(status, 200);
+  assert.equal(data.ok, true);
+  assert.equal(data.sms.enabled, false);
+});
+
+test('SMS send returns 503 when not configured', async () => {
+  const payload = { recipients: [{ phone: '0244123456', name: 'Test' }], message: 'Hello' };
+  const { status, data } = await api('POST', '/api/sms/send', payload, SUPER_ADMIN_HEADERS);
+  assert.equal(status, 503);
+  assert.match(data.error, /not configured/i);
+});

@@ -4685,6 +4685,40 @@ html[data-theme="dark"] .admin-login-back:hover {
   gap: 10px;
   flex-wrap: wrap;}
 
+/* ---- Admin SMS alert ---- */
+.admin-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 18px;
+  border: 1px solid;
+}
+.admin-alert-success {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #0f9d76;
+}
+.admin-alert-error {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #dc2626;
+}
+html[data-theme="dark"] .admin-alert-success { color: #34d399; }
+html[data-theme="dark"] .admin-alert-error { color: #f87171; }
+
+.admin-spin {
+  animation: admin-spin 0.8s linear infinite;
+}
+@keyframes admin-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+
 /* ---- Admin dashboard charts ---- */
 .admin-charts-grid {
   display: grid;

@@ -6,7 +6,9 @@ import {
   AlertTriangle,
   UserX,
   TrendingUp,
-  Search
+  Search,
+  MessageSquare,
+  Send
 } from 'lucide-react'
 import { API_URL, getCampusAuthHeaders } from '../../config'
 import { useAdminContext } from './AdminLayout'
@@ -37,6 +39,7 @@ function Retention() {
   const [error, setError] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
+  const [sms, setSms] = useState({ status: null, sending: false, result: null })
 
   const fetchData = useCallback(async () => {
     try {
@@ -56,6 +59,51 @@ function Retention() {
   useEffect(() => {
     fetchData()
   }, [fetchData, refreshKey])
+
+  const textableStatuses = ['at_risk', 'churned']
+
+  const sendEngagementSms = useCallback(async () => {
+    if (!data) return
+    const recipients = (data.records || [])
+      .filter((r) => textableStatuses.includes(r.status) && r.phone)
+      .map((r) => ({ phone: r.phone, name: r.name }))
+    if (recipients.length === 0) {
+      setSms({ status: 'error', sending: false, result: 'No at-risk or churned members have a phone number to text.' })
+      return
+    }
+    setSms((prev) => ({ ...prev, sending: true, result: null, status: null }))
+    try {
+      const headers = getCampusAuthHeaders(activeCampus)
+      const message = `Hello {name}, we've missed you at ${activeCampus}. We'd love to see you again soon. Warm regards, the team.`
+      const res = await fetch(`${API_URL}/sms/send`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipients,
+          message,
+          from: undefined
+        })
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setSms({ status: 'error', sending: false, result: body.error || 'Failed to send SMS.' })
+        return
+      }
+      const s = body.sms || {}
+      const note = s.sent !== undefined
+        ? `Sent ${s.sent} message(s). ${s.failed ? s.failed + ' failed.' : ''} ${s.skipped ? s.skipped + ' skipped (no provider).' : ''}`
+        : 'Messages sent.'
+      setSms({ status: 'success', sending: false, result: note })
+    } catch (err) {
+      console.error('SMS send error:', err)
+      setSms({ status: 'error', sending: false, result: 'Unable to reach the SMS service.' })
+    }
+  }, [data, activeCampus])
+
+  const textableCount = useMemo(() => {
+    if (!data) return 0
+    return (data.records || []).filter((r) => textableStatuses.includes(r.status) && r.phone).length
+  }, [data])
 
   const rows = useMemo(() => {
     if (!data) return []
@@ -107,7 +155,25 @@ function Retention() {
           <h1 className="admin-page-title">Retention & Churn</h1>
           <p className="admin-page-subtitle">Who&apos;s returning, who&apos;s gone quiet, and who&apos;s stopped coming</p>
         </div>
+        <div className="admin-heading-actions">
+          <button
+            type="button"
+            className="admin-btn admin-btn-primary"
+            onClick={sendEngagementSms}
+            disabled={sms.sending || textableCount === 0}
+            title={textableCount === 0 ? 'No at-risk or churned members with a phone number' : `Text ${textableCount} at-risk + churned members`}
+          >
+            {sms.sending ? <Send size={16} strokeWidth={2} className="admin-spin" /> : <MessageSquare size={16} strokeWidth={2} />}
+            Follow-up SMS ({textableCount})
+          </button>
+        </div>
       </div>
+
+      {sms.result && (
+        <div className={`admin-alert admin-alert-${sms.status}`}>
+          {sms.result}
+        </div>
+      )}
 
       <div className="admin-stats-grid admin-stats-grid-4">
         {tiles.map((tile) => (
