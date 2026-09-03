@@ -28,11 +28,11 @@ function Home() {
             <button className="page-btn">Open</button>
           </div>
 
-          <div className="page-card security-card" onClick={() => window.location.href = '/security'}>
+          <div className="page-card security-card" onClick={() => window.location.href = '/admin/login'}>
             <div className="page-icon">🔒</div>
             <h3>Security Verification</h3>
             <p>Verify access tokens for campus staff</p>
-            <div className="page-url">localhost:3000/security</div>
+            <div className="page-url">localhost:3000/admin/login</div>
             <button className="page-btn">Open</button>
           </div>
 
