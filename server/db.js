@@ -708,6 +708,96 @@ export async function listTokensWithStudents(campus, start, end) {
   return flattenTokenRows(rows);
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export async function getRetention(campus) {
+  let students;
+  let tokens;
+
+  if (supabase) {
+    let sQuery = supabase.from('students').select('id,name,phone,purpose,campus,created_at');
+    let tQuery = supabase.from('access_tokens').select('student_id,verified_at,used_at,created_at');
+    if (campus) {
+      sQuery = sQuery.eq('campus', campus);
+      tQuery = tQuery.eq('campus', campus);
+    }
+    const [sRes, tRes] = await Promise.all([sQuery, tQuery]);
+    if (sRes.error) console.error('Supabase retention students failed:', sRes.error.message || sRes.error);
+    if (tRes.error) console.error('Supabase retention tokens failed:', tRes.error.message || tRes.error);
+    students = (sRes.data || []).map((s) => ({ ...s }));
+    tokens = (tRes.data || []).filter((t) => t.verified_at);
+  } else {
+    const campusClause = campus ? 'WHERE campus = ?' : '';
+    const sParams = campus ? [campus] : [];
+    students = sqlite.prepare(`SELECT id,name,phone,purpose,campus,created_at FROM students ${campusClause}`).all(...sParams);
+    const where = campus ? 'WHERE verified_at IS NOT NULL AND campus = ?' : 'WHERE verified_at IS NOT NULL';
+    const tParams = campus ? [campus] : [];
+    tokens = sqlite.prepare(`SELECT student_id, verified_at, used_at FROM access_tokens ${where}`).all(...tParams);
+  }
+
+  const visitsByStudent = {};
+  tokens.forEach((t) => {
+    const sid = t.student_id;
+    if (!visitsByStudent[sid]) visitsByStudent[sid] = [];
+    visitsByStudent[sid].push(t.verified_at);
+  });
+
+  const now = Date.now();
+  const records = students.map((s) => {
+    const visitTimes = (visitsByStudent[s.id] || []).map((v) => new Date(v).getTime()).filter((t) => !Number.isNaN(t));
+    const visitSet = [...new Set(visitTimes)].sort((a, b) => a - b);
+    const visitCount = visitSet.length;
+    const firstVisit = visitSet.length ? new Date(visitSet[0]).toISOString() : null;
+    const lastVisit = visitSet.length ? new Date(visitSet[visitSet.length - 1]).toISOString() : null;
+    const lastTs = visitSet.length ? visitSet[visitSet.length - 1] : null;
+    const daysSince = lastTs ? Math.floor((now - lastTs) / DAY_MS) : null;
+    const daysSinceReg = s.created_at ? Math.floor((now - new Date(s.created_at).getTime()) / DAY_MS) : null;
+
+    let status;
+    if (visitCount === 0) status = 'inactive';
+    else if (visitCount >= 2 && daysSince <= 30) status = 'returning';
+    else if (visitCount === 1 && daysSince <= 30) status = 'new';
+    else if (daysSince <= 60) status = 'at_risk';
+    else status = 'churned';
+
+    return {
+      id: s.id,
+      name: s.name || '',
+      phone: s.phone || '',
+      purpose: s.purpose || '',
+      campus: s.campus || '',
+      created_at: s.created_at || null,
+      visit_count: visitCount,
+      first_visit: firstVisit,
+      last_visit: lastVisit,
+      days_since_last: daysSince,
+      days_since_registered: daysSinceReg,
+      status
+    };
+  });
+
+  const statusCounts = {};
+  records.forEach((r) => {
+    statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
+  });
+
+  const total = records.length;
+  const withVisits = records.filter((r) => r.visit_count > 0).length;
+  const returning = records.filter((r) => r.visit_count > 1).length;
+  const summary = {
+    total,
+    withVisits,
+    returning,
+    returningRate: total ? Math.round((returning / total) * 100) : 0,
+    inactive: statusCounts.inactive || 0,
+    new: statusCounts.new || 0,
+    atRisk: statusCounts.at_risk || 0,
+    churned: statusCounts.churned || 0
+  };
+
+  return { summary, records };
+}
+
 export async function listTokensVerifiedOn(campus, date) {
   if (supabase) {
     let query = supabase

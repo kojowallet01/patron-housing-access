@@ -12,6 +12,7 @@ import AdminLogin from './pages/admin/AdminLogin'
 import Dashboard from './pages/admin/Dashboard'
 import Students from './pages/admin/Students'
 import Visitors from './pages/admin/Visitors'
+import Retention from './pages/admin/Retention'
 import PasswordManager from './pages/admin/PasswordManager'
 import Reports from './pages/admin/Reports'
 import Settings from './pages/admin/Settings'
@@ -96,6 +97,7 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="students" element={<Students />} />
           <Route path="visitors" element={<Visitors />} />
+          <Route path="retention" element={<Retention />} />
           <Route path="security" element={<PasswordManager />} />
           <Route path="reports" element={<Reports />} />
           <Route path="reports/daily" element={<DailySignups />} />

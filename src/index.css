@@ -4587,13 +4587,103 @@ html[data-theme="dark"] .admin-login-back:hover {
   border-radius: 999px;
 }
 
+/* ---- Admin retention / churn ---- */
+.admin-retention-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.admin-retention-seg {
+  display: grid;
+  grid-template-columns: 14px 90px 32px 1fr 40px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.admin-retention-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.admin-retention-seg-label {
+  font-weight: 600;
+  color: #334155;
+}
+
+.admin-retention-seg-count {
+  font-weight: 700;
+  color: #0f172a;
+  text-align: right;
+}
+
+.admin-retention-track {
+  height: 10px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.admin-retention-bar {
+  height: 100%;
+  border-radius: 999px;
+  min-width: 2px;
+}
+
+.admin-retention-seg-pct {
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: right;
+  font-weight: 600;
+}
+
+.admin-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.admin-filter-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-filter-chip {
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.admin-filter-chip:hover {
+  border-color: #c7d2fe;
+}
+
+.admin-filter-chip.active {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #ffffff;
+}
+
 /* ---- Admin heading actions ---- */
 .admin-heading-actions {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
-}
+  flex-wrap: wrap;}
 
 /* ---- Admin dashboard charts ---- */
 .admin-charts-grid {
@@ -5743,6 +5833,38 @@ html[data-theme="dark"] .admin-pie-legend-label {
 
 html[data-theme="dark"] .admin-pie-legend-value {
   color: #f1f5f9;
+}
+
+html[data-theme="dark"] .admin-retention-track {
+  background: #273449;
+}
+
+html[data-theme="dark"] .admin-retention-seg-label {
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .admin-retention-seg-count {
+  color: #f1f5f9;
+}
+
+html[data-theme="dark"] .admin-retention-seg-pct {
+  color: #64748b;
+}
+
+html[data-theme="dark"] .admin-filter-chip {
+  background: #1e293b;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .admin-filter-chip:hover {
+  border-color: #6366f1;
+}
+
+html[data-theme="dark"] .admin-filter-chip.active {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #ffffff;
 }
 
 html[data-theme="dark"] .admin-message-bar {

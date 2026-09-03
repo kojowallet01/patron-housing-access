@@ -13,7 +13,8 @@ import {
   Building2,
   Menu,
   X,
-  Database
+  Database,
+  TrendingUp
 } from 'lucide-react'
 import { API_URL, CAMPUS_INSTITUTE_NAME, setSelectedCampus, getSelectedCampus } from '../../config'
 import { validateSession, logoutSession, clearSession } from '../../auth'
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true, bottom: true },
   { path: '/admin/students', label: 'Students', icon: Users, end: false, bottom: true },
   { path: '/admin/visitors', label: 'Visitors', icon: UserCheck, end: false, bottom: true },
+  { path: '/admin/retention', label: 'Retention', icon: TrendingUp, end: false, bottom: false },
   { path: '/admin/security', label: 'Security', icon: ShieldCheck, end: false, bottom: true },
   { path: '/admin/reports', label: 'Reports', icon: BarChart3, end: false, bottom: true },
   { path: '/admin/settings', label: 'Settings', icon: Settings, end: false, bottom: false }

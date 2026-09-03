@@ -20,7 +20,8 @@ import {
   Download,
   QrCode,
   PieChart,
-  BarChart2
+  BarChart2,
+  TrendingUp
 } from 'lucide-react'
 import { API_URL, getCampusAuthHeaders } from '../../config'
 import { useAdminContext } from './AdminLayout'
@@ -253,7 +254,8 @@ function Dashboard() {
   const reportItems = [
     { title: 'Daily Signups', path: '/admin/reports/daily', desc: "Today's visitor signups", icon: CalendarCheck },
     { title: 'Weekly Signups', path: '/admin/reports/weekly', desc: 'Visitors over the past week', icon: BarChart3 },
-    { title: 'Monthly Signups', path: '/admin/reports/monthly', desc: 'Signups for this month', icon: FileText }
+    { title: 'Monthly Signups', path: '/admin/reports/monthly', desc: 'Signups for this month', icon: FileText },
+    { title: 'Retention & Churn', path: '/admin/retention', desc: 'Returning, at-risk and churned members', icon: TrendingUp }
   ]
 
   if (loading) {

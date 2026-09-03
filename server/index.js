@@ -40,6 +40,7 @@ import {
   countVerifiedVisits,
   countVerifiedVisitsBetween,
   countAllVerifiedVisits,
+  getRetention,
   checkSupabaseHealth
 } from './db.js';
 
@@ -458,7 +459,8 @@ app.get('/api', (req, res) => {
       '/api/admin/today',
       '/api/admin/students',
       '/api/admin/stats',
-      '/api/admin/visits'
+      '/api/admin/visits',
+      '/api/admin/retention'
     ]
   });
 });
@@ -849,6 +851,17 @@ app.get('/api/admin/visits', requireAdminAuth, async (req, res) => {
   } catch (error) {
     console.error('Visits query error:', error);
     res.status(500).json({ error: 'Failed to fetch visit data' });
+  }
+});
+
+app.get('/api/admin/retention', requireAdminAuth, async (req, res) => {
+  try {
+    const campus = req.isSuperAdmin ? null : req.userCampus;
+    const result = await getRetention(campus);
+    res.json(result);
+  } catch (error) {
+    console.error('Retention query error:', error);
+    res.status(500).json({ error: 'Failed to fetch retention data' });
   }
 });
 

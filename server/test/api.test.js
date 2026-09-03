@@ -268,3 +268,57 @@ test('restore replaces all data', async () => {
 
   assert.equal(db.getSettingSync('campus_name'), 'TESANO CAMPUS');
 });
+
+test('retention endpoint classifies students by visit recency', async () => {
+  const now = Date.now();
+  const DAY = 24 * 60 * 60 * 1000;
+  const iso = (offsetDays) => new Date(now - offsetDays * DAY).toISOString();
+
+  const students = [
+    { id: 'ret-active', name: 'Ret Active', phone: '+233 50 100 0001', purpose: 'Student', campus: 'TESANO CAMPUS', created_at: iso(90) },
+    { id: 'ret-new', name: 'Ret New', phone: '+233 50 100 0002', purpose: 'Student', campus: 'TESANO CAMPUS', created_at: iso(10) },
+    { id: 'ret-return', name: 'Ret Returning', phone: '+233 50 100 0003', purpose: 'Student', campus: 'TESANO CAMPUS', created_at: iso(120) },
+    { id: 'ret-risk', name: 'Ret AtRisk', phone: '+233 50 100 0004', purpose: 'Visitor', campus: 'TESANO CAMPUS', created_at: iso(80) },
+    { id: 'ret-gone', name: 'Ret Churned', phone: '+233 50 100 0005', purpose: 'Visitor', campus: 'TESANO CAMPUS', created_at: iso(200) },
+    { id: 'ret-tier', name: 'Ret Inactive', phone: '+233 50 100 0006', purpose: 'Student', campus: 'TESANO CAMPUS', created_at: iso(30) }
+  ];
+  for (const s of students) await db.insertStudent(s);
+
+  const token = (id, studentId, offsetDays) => db.insertToken({
+    id,
+    student_id: studentId,
+    campus: 'TESANO CAMPUS',
+    token: String(Math.floor(1000 + Math.random() * 8999)),
+    valid_date: new Date(now - offsetDays * DAY).toISOString().slice(0, 10),
+    created_at: iso(offsetDays),
+    used_at: iso(offsetDays),
+    verified_at: iso(offsetDays)
+  });
+
+  await token('t-ret-active', 'ret-active', 5);
+  await token('t-ret-active2', 'ret-active', 1);
+  await token('t-ret-new', 'ret-new', 2);
+  await token('t-ret-return', 'ret-return', 100);
+  await token('t-ret-return2', 'ret-return', 3);
+  await token('t-ret-risk', 'ret-risk', 45);
+  await token('t-ret-gone', 'ret-gone', 90);
+
+  const { status, data } = await api('GET', '/api/admin/retention', null, SUPER_ADMIN_HEADERS);
+  assert.equal(status, 200);
+
+  const byId = {};
+  data.records.forEach((r) => { byId[r.id] = r; });
+
+  assert.equal(byId['ret-active'].status, 'returning');
+  assert.equal(byId['ret-active'].visit_count, 2);
+  assert.equal(byId['ret-new'].status, 'new');
+  assert.equal(byId['ret-new'].visit_count, 1);
+  assert.equal(byId['ret-return'].status, 'returning');
+  assert.equal(byId['ret-return'].visit_count, 2);
+  assert.equal(byId['ret-risk'].status, 'at_risk');
+  assert.equal(byId['ret-gone'].status, 'churned');
+  assert.equal(byId['ret-tier'].status, 'inactive');
+
+  assert.ok(data.summary.total >= students.length);
+  assert.equal(data.summary.returning >= 2, true);
+});
