@@ -60,7 +60,7 @@ function Retention() {
     fetchData()
   }, [fetchData, refreshKey])
 
-  const textableStatuses = ['at_risk', 'churned']
+  const textableStatuses = ['at_risk', 'churned', 'inactive']
 
   const sendEngagementSms = useCallback(async () => {
     if (!data) return
@@ -68,7 +68,7 @@ function Retention() {
       .filter((r) => textableStatuses.includes(r.status) && r.phone)
       .map((r) => ({ phone: r.phone, name: r.name }))
     if (recipients.length === 0) {
-      setSms({ status: 'error', sending: false, result: 'No at-risk or churned members have a phone number to text.' })
+      setSms({ status: 'error', sending: false, result: 'No at-risk, churned, or inactive members have a phone number to text.' })
       return
     }
     setSms((prev) => ({ ...prev, sending: true, result: null, status: null }))
@@ -161,7 +161,7 @@ function Retention() {
             className="admin-btn admin-btn-primary"
             onClick={sendEngagementSms}
             disabled={sms.sending || textableCount === 0}
-            title={textableCount === 0 ? 'No at-risk or churned members with a phone number' : `Text ${textableCount} at-risk + churned members`}
+            title={textableCount === 0 ? 'No at-risk, churned, or inactive members with a phone number' : `Text ${textableCount} at-risk + churned + inactive members`}
           >
             {sms.sending ? <Send size={16} strokeWidth={2} className="admin-spin" /> : <MessageSquare size={16} strokeWidth={2} />}
             Follow-up SMS ({textableCount})
