@@ -6307,3 +6307,299 @@ html[data-theme="dark"] .status-active {
   background: #052e1f;
   color: #34d399;
 }
+
+/* ==========================================================================
+   Retention & Patron Experience Components
+   ========================================================================== */
+
+/* Entry Mode Switcher (Quick Pass vs First-Time) */
+.entry-mode-switch {
+  display: flex;
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 20px;
+  gap: 4px;
+}
+
+html[data-theme="dark"] .entry-mode-switch {
+  background: #1e293b;
+}
+
+.entry-mode-tab {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.entry-mode-tab.active {
+  background: #ffffff;
+  color: #1e293b;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+html[data-theme="dark"] .entry-mode-tab.active {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.quick-pass-banner {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+
+html[data-theme="dark"] .quick-pass-banner {
+  background: #172554;
+  border-color: #1e40af;
+}
+
+.quick-pass-banner h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: #1e40af;
+  font-weight: 700;
+}
+
+html[data-theme="dark"] .quick-pass-banner h3 {
+  color: #93c5fd;
+}
+
+.quick-pass-banner p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #3b82f6;
+  line-height: 1.4;
+}
+
+html[data-theme="dark"] .quick-pass-banner p {
+  color: #bfdbfe;
+}
+
+.quick-switch-hint {
+  text-align: center;
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 16px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #3b82f6;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: inherit;
+}
+
+.link-btn:hover {
+  color: #1d4ed8;
+}
+
+/* Loyalty Milestones on Token Pass */
+.milestone-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.milestone-new {
+  background: #e0f2fe;
+  color: #0284c7;
+  border: 1px solid #bae6fd;
+}
+
+.milestone-bronze {
+  background: #fef3c7;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+
+.milestone-silver {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.milestone-gold {
+  background: #fef9c3;
+  color: #854d0e;
+  border: 1px solid #fde047;
+}
+
+html[data-theme="dark"] .milestone-new {
+  background: #082f49;
+  color: #38bdf8;
+  border-color: #0369a1;
+}
+
+html[data-theme="dark"] .milestone-bronze {
+  background: #451a03;
+  color: #fbbf24;
+  border-color: #b45309;
+}
+
+html[data-theme="dark"] .milestone-silver {
+  background: #1e293b;
+  color: #94a3b8;
+  border-color: #475569;
+}
+
+html[data-theme="dark"] .milestone-gold {
+  background: #422006;
+  color: #facc15;
+  border-color: #ca8a04;
+}
+
+/* Patron Facility Feedback Card */
+.feedback-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 20px 0;
+  text-align: center;
+}
+
+html[data-theme="dark"] .feedback-card {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+.feedback-card h3 {
+  margin: 0 0 4px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+html[data-theme="dark"] .feedback-card h3 {
+  color: #f1f5f9;
+}
+
+.feedback-subtitle {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.star-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.star-btn {
+  background: none;
+  border: none;
+  font-size: 28px;
+  line-height: 1;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: transform 0.15s ease, color 0.15s ease;
+  padding: 2px;
+}
+
+.star-btn:hover,
+.star-btn.active {
+  color: #eab308;
+  transform: scale(1.15);
+}
+
+.feedback-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.feedback-chip {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.feedback-chip:hover {
+  border-color: #94a3b8;
+}
+
+.feedback-chip.active {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+html[data-theme="dark"] .feedback-chip {
+  background: #334155;
+  border-color: #475569;
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .feedback-chip.active {
+  background: #3b82f6;
+  color: #ffffff;
+  border-color: #3b82f6;
+}
+
+.feedback-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 12.5px;
+  margin-bottom: 10px;
+  resize: vertical;
+  background: #ffffff;
+  color: #1e293b;
+}
+
+html[data-theme="dark"] .feedback-input {
+  background: #0f172a;
+  border-color: #334155;
+  color: #f1f5f9;
+}
+
+.feedback-thankyou {
+  padding: 12px 0;
+}
+
+.feedback-thankyou .thankyou-icon {
+  font-size: 24px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.feedback-thankyou p {
+  margin: 0;
+  font-size: 13px;
+  color: #10b981;
+  font-weight: 600;
+}
+

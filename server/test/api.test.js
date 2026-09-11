@@ -336,3 +336,38 @@ test('SMS send returns 503 when not configured', async () => {
   assert.equal(status, 503);
   assert.match(data.error, /not configured/i);
 });
+
+test('feedback submission and admin retrieval', async () => {
+  const fb = {
+    rating: 5,
+    campus: 'TESANO CAMPUS',
+    category: 'Quiet Study',
+    comment: 'Great atmosphere today!'
+  };
+  const postRes = await api('POST', '/api/feedback', fb);
+  assert.equal(postRes.status, 200);
+  assert.equal(postRes.data.success, true);
+
+  const getRes = await api('GET', '/api/admin/feedback', null, SUPER_ADMIN_HEADERS);
+  assert.equal(getRes.status, 200);
+  assert.equal(getRes.data.success, true);
+  assert.ok(getRes.data.total >= 1);
+  assert.equal(getRes.data.ratingsBreakdown['5'] >= 1, true);
+});
+
+test('token response contains loyalty milestone', async () => {
+  await api('POST', '/api/register', {
+    name: 'Loyal Student',
+    phone: '+233 20 999 8888',
+    purpose: 'Study',
+    campus: 'TESANO CAMPUS'
+  });
+  const gen = await api('POST', '/api/generate-token', {
+    phone: '+233 20 999 8888',
+    campus: 'TESANO CAMPUS'
+  });
+  assert.equal(gen.status, 200);
+  assert.ok(gen.data.milestone);
+  assert.ok(gen.data.milestone.badge);
+});
+

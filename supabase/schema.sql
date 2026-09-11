@@ -40,11 +40,23 @@ create table if not exists public.sessions (
   expires_at     text not null
 );
 
+create table if not exists public.feedback (
+  id         text primary key,
+  student_id text references public.students (id),
+  phone      text,
+  campus     text not null default 'TESANO CAMPUS',
+  rating     integer not null,
+  category   text,
+  comment    text,
+  created_at text not null
+);
+
 create index if not exists idx_students_campus on public.students (campus);
 create index if not exists idx_access_tokens_campus on public.access_tokens (campus);
 create index if not exists idx_access_tokens_student on public.access_tokens (student_id);
 create index if not exists idx_access_tokens_token on public.access_tokens (token, valid_date);
 create index if not exists idx_sessions_expires on public.sessions (expires_at);
+create index if not exists idx_feedback_campus on public.feedback (campus);
 
 -- RLS is intentionally left disabled. All traffic is routed through the
 -- Express API layer, which uses the service_role key (bypasses RLS) and

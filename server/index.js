@@ -2,13 +2,13 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync, statSync } from 'fs';
 import QRCode from 'qrcode';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
-import { randomInt } from 'crypto';
+import { randomInt, timingSafeEqual } from 'crypto';
 import {
   init,
   getSettingSync,
@@ -41,9 +41,12 @@ import {
   countVerifiedVisitsBetween,
   countAllVerifiedVisits,
   getRetention,
-  checkSupabaseHealth
+  checkSupabaseHealth,
+  countVerifiedVisitsForStudent,
+  insertFeedback,
+  listFeedback
 } from './db.js';
-import { sendSingle, sendBulk, health as smsHealth, isSmsEnabled, getConfig as getSmsConfig, fillTemplate } from './sms.js';
+import { sendSingle, sendBulk, health as smsHealth, getConfig as getSmsConfig, fillTemplate } from './sms.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -106,7 +109,11 @@ function resolveCampusName(value) {
 }
 
 function isMatchingToken(candidateToken, tokenValue) {
-  return Boolean(candidateToken) && Boolean(tokenValue) && String(candidateToken) === String(tokenValue);
+  if (!candidateToken || !tokenValue) return false;
+  const bufA = Buffer.from(String(candidateToken));
+  const bufB = Buffer.from(String(tokenValue));
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
 
 function readStoredCampusTokenMap(role) {
@@ -164,7 +171,28 @@ async function setCampusRoleToken(campusName, role, password) {
 }
 
 app.use(helmet());
-app.use(cors({ origin: true }));
+
+const rawAllowedOrigins = process.env.ALLOWED_ORIGINS || '';
+const allowedOrigins = rawAllowedOrigins
+  ? rawAllowedOrigins.split(',').map(s => s.trim()).filter(Boolean)
+  : [];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.length === 0) {
+      return callback(null, true);
+    }
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    if (process.env.NODE_ENV !== 'production' && (/^http:\/\/localhost(:\d+)?$/.test(origin) || /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin))) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS policy does not allow access from origin ${origin}`));
+  },
+  credentials: true
+}));
 app.use(express.json({ limit: '50mb' }));
 
 const apiLimiter = rateLimit({
@@ -324,17 +352,29 @@ async function createTokenForStudent(studentId, campusName = DEFAULT_CAMPUS) {
   return tokenData;
 }
 
+function getMilestoneInfo(count) {
+  if (count <= 0) return { label: 'First Visit', badge: 'First Visit • Welcome! 🎉', tier: 'new', visitNumber: 1 };
+  if (count <= 3) return { label: 'Returning Member', badge: `Visit #${count + 1} • Returning Member 🌟`, tier: 'bronze', visitNumber: count + 1 };
+  if (count <= 9) return { label: 'Frequent Regular', badge: `Visit #${count + 1} • Frequent Regular 🎖️`, tier: 'silver', visitNumber: count + 1 };
+  return { label: 'VIP Patron', badge: `Visit #${count + 1} • VIP Patron 👑`, tier: 'gold', visitNumber: count + 1 };
+}
+
 async function buildTokenResponse(tokenData, student) {
   const tokenQR = await QRCode.toDataURL(tokenData.token);
   const recentVisits = await listTokensForStudent(student.id);
+  const verifiedVisits = await countVerifiedVisitsForStudent(student.id);
+  const milestone = getMilestoneInfo(verifiedVisits);
+
   return {
     success: true,
-    student: { name: student.name, phone: student.phone, campus: student.campus },
+    student: { id: student.id, name: student.name, phone: student.phone, campus: student.campus },
     token: tokenData.token,
     tokenQR,
     validDate: tokenData.valid_date,
     campus: student.campus,
-    recentVisits: recentVisits.slice(0, 10)
+    recentVisits: recentVisits.slice(0, 10),
+    totalVisits: verifiedVisits,
+    milestone
   };
 }
 
@@ -881,6 +921,137 @@ app.get('/api/admin/retention', requireAdminAuth, async (req, res) => {
   }
 });
 
+app.post('/api/admin/retention/auto-campaign', requireAdminAuth, async (req, res) => {
+  try {
+    const campus = req.isSuperAdmin ? null : req.userCampus;
+    const retentionData = await getRetention(campus);
+    const records = retentionData.records || [];
+
+    // Cohort 1: First-time visitors who visited 3-7 days ago and haven't returned
+    const firstTimeFollowUps = records.filter(r =>
+      r.visit_count === 1 &&
+      r.days_since_last >= 3 &&
+      r.days_since_last <= 7 &&
+      r.phone
+    );
+
+    // Cohort 2: At-risk visitors who haven't visited in 25-35 days
+    const atRiskReengagements = records.filter(r =>
+      r.visit_count >= 2 &&
+      r.days_since_last >= 25 &&
+      r.days_since_last <= 35 &&
+      r.phone
+    );
+
+    const cfg = getSmsConfig();
+    const isReady = cfg.enabled && cfg.apiKey;
+
+    const messagesToSend = [];
+    firstTimeFollowUps.forEach(r => {
+      messagesToSend.push({
+        to: r.phone,
+        message: fillTemplate(
+          "Hi {name}, we hope you enjoyed your visit to {campus}! Our facility is open and we would love to see you again soon.",
+          { name: r.name, campus: r.campus || campus || 'our campus' }
+        ),
+        type: 'first-time-followup'
+      });
+    });
+
+    atRiskReengagements.forEach(r => {
+      messagesToSend.push({
+        to: r.phone,
+        message: fillTemplate(
+          "Hello {name}, we noticed it's been a few weeks since your last visit to {campus}. We miss having you! Drop by anytime.",
+          { name: r.name, campus: r.campus || campus || 'our campus' }
+        ),
+        type: 'at-risk-winback'
+      });
+    });
+
+    let sendResult = { sent: 0, failed: 0, skipped: messagesToSend.length, reason: 'SMS not enabled' };
+    if (isReady && messagesToSend.length > 0) {
+      const results = [];
+      for (const item of messagesToSend) {
+        const result = await sendSingle({ to: item.to, message: item.message });
+        results.push(result);
+      }
+      const sent = results.filter(r => r.sent).length;
+      const failed = results.filter(r => !r.sent).length;
+      sendResult = { sent, failed, skipped: 0, provider: cfg.provider };
+    }
+
+    res.json({
+      success: true,
+      cohorts: {
+        firstTimeFollowUpsCount: firstTimeFollowUps.length,
+        atRiskReengagementsCount: atRiskReengagements.length,
+        totalEligible: messagesToSend.length
+      },
+      sms: sendResult
+    });
+  } catch (error) {
+    console.error('Auto-campaign error:', error);
+    res.status(500).json({ error: 'Failed to run retention campaign' });
+  }
+});
+
+app.post('/api/feedback', async (req, res) => {
+  try {
+    const { phone, campus, rating, category, comment, studentId } = req.body || {};
+    const numericRating = Number(rating);
+    if (!numericRating || numericRating < 1 || numericRating > 5) {
+      return res.status(400).json({ error: 'Rating must be an integer between 1 and 5' });
+    }
+    const campusName = resolveCampusName(campus || DEFAULT_CAMPUS);
+    const feedbackItem = {
+      id: uuidv4(),
+      student_id: studentId || null,
+      phone: phone ? String(phone).trim() : null,
+      campus: campusName,
+      rating: Math.round(numericRating),
+      category: category ? String(category).trim() : 'General',
+      comment: comment ? String(comment).trim() : null,
+      created_at: new Date().toISOString()
+    };
+    await insertFeedback(feedbackItem);
+    res.json({ success: true, message: 'Thank you for your feedback!' });
+  } catch (error) {
+    console.error('Feedback submission error:', error);
+    res.status(500).json({ error: 'Failed to record feedback' });
+  }
+});
+
+app.get('/api/admin/feedback', requireAdminAuth, async (req, res) => {
+  try {
+    const campus = req.isSuperAdmin ? null : req.userCampus;
+    const items = await listFeedback(campus, 100);
+    const total = items.length;
+    const avgRating = total > 0
+      ? Number((items.reduce((acc, f) => acc + f.rating, 0) / total).toFixed(1))
+      : 0;
+    const ratingsBreakdown = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    const categoryBreakdown = {};
+    items.forEach((f) => {
+      ratingsBreakdown[f.rating] = (ratingsBreakdown[f.rating] || 0) + 1;
+      const cat = f.category || 'General';
+      categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + 1;
+    });
+
+    res.json({
+      success: true,
+      total,
+      avgRating,
+      ratingsBreakdown,
+      categoryBreakdown,
+      recent: items.slice(0, 25)
+    });
+  } catch (error) {
+    console.error('Admin feedback fetch error:', error);
+    res.status(500).json({ error: 'Failed to load feedback' });
+  }
+});
+
 app.get('/api/sms/status', requireAdminAuth, async (_req, res) => {
   res.json({ ok: true, sms: smsHealth() });
 });
@@ -1177,14 +1348,30 @@ if (isMain) {
 }
 
 const distDir = path.join(process.cwd(), 'dist');
-fs.stat(distDir).then(stat => {
-  if (stat && stat.isDirectory()) {
-    app.use(express.static(distDir));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distDir, 'index.html'));
-    });
-    console.log('Serving production frontend from', distDir);
+if (existsSync(distDir)) {
+  try {
+    if (statSync(distDir).isDirectory()) {
+      app.use(express.static(distDir));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distDir, 'index.html'));
+      });
+      console.log('Serving production frontend from', distDir);
+    }
+  } catch (err) {
+    console.warn('Could not inspect dist directory:', err.message || err);
   }
-}).catch(() => {
-  // ignore if dist doesn't exist yet
+}
+
+// Centralized Express error handler
+app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+  console.error('Unhandled request error:', err);
+  const status = Number(err.status || err.statusCode || 500);
+  res.status(status).json({
+    error: process.env.NODE_ENV === 'production' && status === 500
+      ? 'Internal server error'
+      : (err.message || 'An unexpected error occurred')
+  });
 });

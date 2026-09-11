@@ -8,7 +8,9 @@ import {
   TrendingUp,
   Search,
   MessageSquare,
-  Send
+  Send,
+  Zap,
+  Star
 } from 'lucide-react'
 import { API_URL, getCampusAuthHeaders } from '../../config'
 import { useAdminContext } from './AdminLayout'
@@ -35,18 +37,28 @@ function formatDate(value) {
 function Retention() {
   const { activeCampus, refreshKey } = useAdminContext()
   const [data, setData] = useState(null)
+  const [feedback, setFeedback] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [sms, setSms] = useState({ status: null, sending: false, result: null })
+  const [campaign, setCampaign] = useState({ running: false, result: null, success: false })
 
   const fetchData = useCallback(async () => {
     try {
       const headers = getCampusAuthHeaders(activeCampus)
-      const res = await fetch(`${API_URL}/admin/retention`, { headers })
+      const [res, fbRes] = await Promise.all([
+        fetch(`${API_URL}/admin/retention`, { headers }),
+        fetch(`${API_URL}/admin/feedback`, { headers })
+      ])
+
       if (!res.ok) throw new Error('Retention request failed')
       setData(await res.json())
+
+      if (fbRes.ok) {
+        setFeedback(await fbRes.json())
+      }
       setError('')
     } catch (err) {
       console.error('Error fetching retention:', err)
@@ -100,6 +112,24 @@ function Retention() {
     }
   }, [data, activeCampus])
 
+  const runAutoCampaign = async () => {
+    setCampaign({ running: true, result: null, success: false })
+    try {
+      const headers = getCampusAuthHeaders(activeCampus)
+      const res = await fetch(`${API_URL}/admin/retention/auto-campaign`, {
+        method: 'POST',
+        headers
+      })
+      const resData = await res.json()
+      if (!res.ok) throw new Error(resData.error || 'Campaign execution failed')
+      const s = resData.sms || {}
+      const note = `Auto-campaign complete! Targeted ${resData.cohorts?.totalEligible || 0} patrons (${resData.cohorts?.firstTimeFollowUpsCount || 0} first-time follow-ups [Day 3-7], ${resData.cohorts?.atRiskReengagementsCount || 0} at-risk [Day 25-35]). Dispatched: ${s.sent ?? 0}, Skipped: ${s.skipped ?? 0}.`
+      setCampaign({ running: false, result: note, success: true })
+    } catch (err) {
+      setCampaign({ running: false, result: err.message || 'Auto campaign failed', success: false })
+    }
+  }
+
   const textableCount = useMemo(() => {
     if (!data) return 0
     return (data.records || []).filter((r) => textableStatuses.includes(r.status) && r.phone).length
@@ -152,10 +182,21 @@ function Retention() {
     <div className="admin-page-container">
       <div className="admin-page-heading">
         <div>
-          <h1 className="admin-page-title">Retention & Churn</h1>
-          <p className="admin-page-subtitle">Who&apos;s returning, who&apos;s gone quiet, and who&apos;s stopped coming</p>
+          <h1 className="admin-page-title">Retention & Patron Churn</h1>
+          <p className="admin-page-subtitle">Who&apos;s returning, who&apos;s at risk, and automatic retention interventions</p>
         </div>
         <div className="admin-heading-actions">
+          <button
+            type="button"
+            className="admin-btn"
+            style={{ background: '#4f46e5', color: '#ffffff' }}
+            onClick={runAutoCampaign}
+            disabled={campaign.running}
+            title="Automatically dispatches first-time visitor follow-ups and at-risk win-backs"
+          >
+            <Zap size={16} strokeWidth={2} />
+            {campaign.running ? 'Running Drip...' : 'Run Auto-Retention Drip'}
+          </button>
           <button
             type="button"
             className="admin-btn admin-btn-primary"
@@ -164,10 +205,16 @@ function Retention() {
             title={textableCount === 0 ? 'No at-risk, churned, or inactive members with a phone number' : `Text ${textableCount} at-risk + churned + inactive members`}
           >
             {sms.sending ? <Send size={16} strokeWidth={2} className="admin-spin" /> : <MessageSquare size={16} strokeWidth={2} />}
-            Follow-up SMS ({textableCount})
+            Manual Broadcast ({textableCount})
           </button>
         </div>
       </div>
+
+      {campaign.result && (
+        <div className={`admin-alert admin-alert-${campaign.success ? 'success' : 'error'}`}>
+          {campaign.result}
+        </div>
+      )}
 
       {sms.result && (
         <div className={`admin-alert admin-alert-${sms.status}`}>
@@ -188,6 +235,83 @@ function Retention() {
           </div>
         ))}
       </div>
+
+      {/* Patron Experience & Facility Feedback Card */}
+      {feedback && (
+        <div className="admin-card" style={{ marginBottom: '24px' }}>
+          <div className="admin-card-header">
+            <div className="admin-card-title">
+              <Star size={18} strokeWidth={2} style={{ color: '#eab308' }} />
+              <h2>Patron Facility Satisfaction & Feedback</h2>
+            </div>
+            <span style={{ fontSize: '13px', color: '#64748b' }}>
+              {feedback.total} total ratings • Average: <strong>{feedback.avgRating} / 5.0 ⭐</strong>
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', padding: '16px' }}>
+            {/* Rating Stars Breakdown */}
+            <div>
+              <h4 style={{ margin: '0 0 12px', fontSize: '13px', color: '#64748b', textTransform: 'uppercase' }}>Rating Distribution</h4>
+              {[5, 4, 3, 2, 1].map((stars) => {
+                const count = feedback.ratingsBreakdown?.[stars] || 0
+                const pct = feedback.total ? Math.round((count / feedback.total) * 100) : 0
+                return (
+                  <div key={stars} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', fontSize: '12.5px' }}>
+                    <span style={{ width: '45px', fontWeight: 600 }}>{stars} ★</span>
+                    <div style={{ flex: 1, background: '#f1f5f9', borderRadius: '4px', height: '8px', overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, background: stars >= 4 ? '#10b981' : stars === 3 ? '#f59e0b' : '#ef4444', height: '100%' }} />
+                    </div>
+                    <span style={{ width: '32px', textAlign: 'right', color: '#64748b' }}>{count}</span>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Top Categories */}
+            <div>
+              <h4 style={{ margin: '0 0 12px', fontSize: '13px', color: '#64748b', textTransform: 'uppercase' }}>Facility Experience Tags</h4>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {Object.entries(feedback.categoryBreakdown || {}).map(([cat, count]) => (
+                  <span
+                    key={cat}
+                    style={{
+                      background: '#f1f5f9',
+                      padding: '4px 10px',
+                      borderRadius: '16px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: '#334155'
+                    }}
+                  >
+                    {cat} ({count})
+                  </span>
+                ))}
+                {Object.keys(feedback.categoryBreakdown || {}).length === 0 && (
+                  <p style={{ color: '#94a3b8', fontSize: '12.5px', margin: 0 }}>No category tags submitted yet.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Recent Comments */}
+            <div>
+              <h4 style={{ margin: '0 0 12px', fontSize: '13px', color: '#64748b', textTransform: 'uppercase' }}>Recent Patron Comments</h4>
+              <div style={{ maxHeight: '140px', overflowY: 'auto' }}>
+                {(feedback.recent || []).filter((f) => f.comment).slice(0, 3).map((f) => (
+                  <div key={f.id} style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '8px', marginBottom: '8px', fontSize: '12px' }}>
+                    <span style={{ color: '#eab308' }}>{'★'.repeat(f.rating)}</span>
+                    <span style={{ marginLeft: '6px', color: '#64748b' }}>{f.category}</span>
+                    <p style={{ margin: '4px 0 0', color: '#1e293b' }}>&ldquo;{f.comment}&rdquo;</p>
+                  </div>
+                ))}
+                {(!feedback.recent || feedback.recent.filter((f) => f.comment).length === 0) && (
+                  <p style={{ color: '#94a3b8', fontSize: '12.5px', margin: 0 }}>No written comments yet.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="admin-card">
         <div className="admin-card-header">

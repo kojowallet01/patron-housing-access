@@ -65,12 +65,14 @@ async function sendTermii(cfg, to, message, from) {
     body: JSON.stringify(payload)
   });
   const text = await response.text();
-  let data = null;
-  try { data = JSON.parse(text); } catch { data = text; }
   if (!response.ok) {
     throw new Error(`Termii error ${response.status}: ${text}`);
   }
-  return data;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }
 
 async function sendArkesel(cfg, to, message, from) {
@@ -89,12 +91,14 @@ async function sendArkesel(cfg, to, message, from) {
     body: JSON.stringify(payload)
   });
   const text = await response.text();
-  let data = null;
-  try { data = JSON.parse(text); } catch { data = text; }
   if (!response.ok) {
     throw new Error(`Arkesel error ${response.status}: ${text}`);
   }
-  return data;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }
 
 async function sendSingle({ to, message, from }) {
@@ -106,11 +110,10 @@ async function sendSingle({ to, message, from }) {
     return { sent: false, skipped: true, reason: 'Missing recipient or message' };
   }
   try {
-    let result;
     if (cfg.provider === 'termii') {
-      result = await sendTermii(cfg, to, message, from);
+      await sendTermii(cfg, to, message, from);
     } else if (cfg.provider === 'arkesel') {
-      result = await sendArkesel(cfg, to, message, from);
+      await sendArkesel(cfg, to, message, from);
     } else {
       return { sent: false, skipped: true, reason: `Unsupported provider: ${cfg.provider}` };
     }

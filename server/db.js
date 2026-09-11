@@ -114,6 +114,23 @@ function createSqliteTables() {
     expires_at TEXT NOT NULL
   )`).run();
 
+  sqlite.prepare(`CREATE TABLE IF NOT EXISTS feedback (
+    id TEXT PRIMARY KEY,
+    student_id TEXT,
+    phone TEXT,
+    campus TEXT NOT NULL,
+    rating INTEGER NOT NULL,
+    category TEXT,
+    comment TEXT,
+    created_at TEXT NOT NULL
+  )`).run();
+
+  try {
+    sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_feedback_campus ON feedback (campus)').run();
+  } catch {
+    // ignore
+  }
+
   const tableInfo = sqlite.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='students'").get();
   if (tableInfo?.sql?.includes('phone TEXT NOT NULL UNIQUE')) {
     sqlite.pragma('foreign_keys = OFF');
@@ -957,6 +974,57 @@ export function getSystemInfo() {  let dbSizeBytes = 0;
     dbSizeBytes,
     counts
   };
+}
+
+export async function countVerifiedVisitsForStudent(studentId) {
+  if (!studentId) return 0;
+  if (supabase) {
+    const { count, error } = await supabase
+      .from('access_tokens')
+      .select('*', { count: 'exact', head: true })
+      .eq('student_id', studentId)
+      .not('verified_at', 'is', null);
+    if (error) {
+      console.warn('Supabase count verified visits error:', error.message || error);
+      return 0;
+    }
+    return count || 0;
+  }
+  const row = sqlite.prepare('SELECT COUNT(*) as c FROM access_tokens WHERE student_id = ? AND verified_at IS NOT NULL').get(studentId);
+  return row ? row.c : 0;
+}
+
+export async function insertFeedback(feedback) {
+  if (supabase) {
+    const { error } = await supabase.from('feedback').insert(feedback);
+    if (error) throw new Error(`Supabase insert feedback failed: ${error.message}`);
+    return feedback;
+  }
+  sqlite.prepare(`INSERT INTO feedback (id, student_id, phone, campus, rating, category, comment, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    feedback.id,
+    feedback.student_id || null,
+    feedback.phone || null,
+    feedback.campus,
+    feedback.rating,
+    feedback.category || null,
+    feedback.comment || null,
+    feedback.created_at
+  );
+  return feedback;
+}
+
+export async function listFeedback(campus, limit = 50) {
+  if (supabase) {
+    let query = supabase.from('feedback').select('*').order('created_at', { ascending: false }).limit(limit);
+    if (campus) query = query.eq('campus', campus);
+    const { data, error } = await query;
+    if (error) throw new Error(`Supabase list feedback failed: ${error.message}`);
+    return data || [];
+  }
+  const where = campus ? 'WHERE campus = ?' : '';
+  const params = campus ? [campus, limit] : [limit];
+  return sqlite.prepare(`SELECT * FROM feedback ${where} ORDER BY created_at DESC LIMIT ?`).all(...params);
 }
 
 export function closeDatabase() {
