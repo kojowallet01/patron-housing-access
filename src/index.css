@@ -3432,6 +3432,12 @@ html[data-theme="dark"] .admin-login-back:hover {
   grid-template-columns: repeat(5, 1fr);
   gap: 16px;
   margin-bottom: 24px;
+  transition: opacity 0.15s ease;
+}
+
+.admin-stats-grid.is-switching {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .admin-stats-grid-4 {

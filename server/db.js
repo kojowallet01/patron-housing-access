@@ -260,9 +260,14 @@ export async function setSetting(key, value) {
 }
 
 // ---------------------------------------------------------------------------
-// Sessions
+// Sessions (cached in memory for high-performance authentication checks)
 // ---------------------------------------------------------------------------
+const sessionMemoryCache = new Map();
+const SESSION_CACHE_TTL_MS = 30000;
+
 export async function createSession(session) {
+  sessionMemoryCache.set(session.id, { session, cachedAt: Date.now() });
+
   if (supabase) {
     const { error } = await supabase.from('sessions').insert({
       id: session.id,
@@ -286,6 +291,11 @@ export async function resolveSession(sessionToken) {
   if (!sessionToken) return null;
   const now = new Date().toISOString();
 
+  const cached = sessionMemoryCache.get(sessionToken);
+  if (cached && (Date.now() - cached.cachedAt < SESSION_CACHE_TTL_MS) && cached.session.expires_at > now) {
+    return cached.session;
+  }
+
   if (supabase) {
     const { data, error } = await supabase
       .from('sessions')
@@ -297,15 +307,25 @@ export async function resolveSession(sessionToken) {
       console.error('Supabase session lookup failed:', error.message || error);
       return null;
     }
-    return data ? { ...data, is_super_admin: Boolean(data.is_super_admin) } : null;
+    const resolved = data ? { ...data, is_super_admin: Boolean(data.is_super_admin) } : null;
+    if (resolved) {
+      sessionMemoryCache.set(sessionToken, { session: resolved, cachedAt: Date.now() });
+    }
+    return resolved;
   }
 
-  return sqlite.prepare('SELECT * FROM sessions WHERE id = ? AND expires_at > ?')
+  const resolved = sqlite.prepare('SELECT * FROM sessions WHERE id = ? AND expires_at > ?')
     .get(sessionToken, now) || null;
+  if (resolved) {
+    sessionMemoryCache.set(sessionToken, { session: resolved, cachedAt: Date.now() });
+  }
+  return resolved;
 }
 
 export async function deleteSession(sessionToken) {
   if (!sessionToken) return;
+  sessionMemoryCache.delete(sessionToken);
+
   if (supabase) {
     const { error } = await supabase.from('sessions').delete().eq('id', sessionToken);
     if (error) console.error('Supabase session delete failed:', error.message || error);
@@ -938,6 +958,48 @@ export async function countAllVerifiedVisits(campus) {
     ? 'SELECT COUNT(*) as count FROM access_tokens WHERE campus = ? AND verified_at IS NOT NULL'
     : 'SELECT COUNT(*) as count FROM access_tokens WHERE verified_at IS NOT NULL';
   return sqlite.prepare(sql).get(...(campus ? [campus] : [])).count;
+}
+
+export async function getCampusStats(campus, today, weekStart, weekEnd, monthStart, monthEnd) {
+  if (supabase) {
+    const [totalStudents, todayVisits, thisWeekVisits, thisMonthVisits, totalVisits] = await Promise.all([
+      countStudents(campus),
+      countVerifiedVisits(campus, today),
+      countVerifiedVisitsBetween(campus, weekStart, weekEnd),
+      countVerifiedVisitsBetween(campus, monthStart, monthEnd),
+      countAllVerifiedVisits(campus)
+    ]);
+    return { totalStudents, todayVisits, thisWeekVisits, thisMonthVisits, totalVisits };
+  }
+
+  const campusFilter = campus ? 'WHERE campus = ?' : '';
+  const totalStudents = sqlite.prepare(`SELECT COUNT(*) as count FROM students ${campusFilter}`)
+    .get(...(campus ? [campus] : [])).count;
+
+  const visitParams = [today, weekStart, weekEnd, monthStart, monthEnd];
+  let tokenClause = 'WHERE verified_at IS NOT NULL';
+  if (campus) {
+    tokenClause += ' AND campus = ?';
+    visitParams.push(campus);
+  }
+
+  const visitStats = sqlite.prepare(`
+    SELECT
+      COUNT(*) as totalVisits,
+      COALESCE(SUM(CASE WHEN date(verified_at) = ? THEN 1 ELSE 0 END), 0) as todayVisits,
+      COALESCE(SUM(CASE WHEN date(verified_at) BETWEEN ? AND ? THEN 1 ELSE 0 END), 0) as thisWeekVisits,
+      COALESCE(SUM(CASE WHEN date(verified_at) BETWEEN ? AND ? THEN 1 ELSE 0 END), 0) as thisMonthVisits
+    FROM access_tokens
+    ${tokenClause}
+  `).get(...visitParams);
+
+  return {
+    totalStudents,
+    todayVisits: visitStats?.todayVisits || 0,
+    thisWeekVisits: visitStats?.thisWeekVisits || 0,
+    thisMonthVisits: visitStats?.thisMonthVisits || 0,
+    totalVisits: visitStats?.totalVisits || 0
+  };
 }
 
 // ---------------------------------------------------------------------------

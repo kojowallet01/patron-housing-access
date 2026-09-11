@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Users,
@@ -21,8 +21,7 @@ import {
   CAMPUS_INSTITUTE_NAME,
   setSelectedCampus,
   getSelectedCampus,
-  ADMIN_CAMPUS_OPTIONS,
-  ALL_CAMPUSES
+  CAMPUS_LIST
 } from '../../config'
 import { validateSession, logoutSession, clearSession } from '../../auth'
 
@@ -39,39 +38,44 @@ const NAV_ITEMS = [
 ]
 
 function AdminLayout() {
+  const navigate = useNavigate()
+  const location = useLocation()
   const [activeCampus, setActiveCampus] = useState(getSelectedCampus())
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [sessionChecked, setSessionChecked] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [dbStatus, setDbStatus] = useState(null)
-  const location = useLocation()
 
   useEffect(() => {
     let active = true
 
-      validateSession().then((session) => {
-        if (!active) return
-        if (!session.valid) {
-          clearSession()
-          window.location.href = '/admin/login'
-          return
-        }
-        setIsSuperAdmin(Boolean(session.isSuperAdmin))
-        if (!session.isSuperAdmin && session.campus) {
-          setActiveCampus(session.campus)
-          setSelectedCampus(session.campus)
-        }
-        setSessionChecked(true)
-      })
+    validateSession().then((session) => {
+      if (!active) return
+      if (!session.valid) {
+        clearSession()
+        navigate('/admin/login')
+        return
+      }
+      setIsSuperAdmin(Boolean(session.isSuperAdmin))
+      if (!session.isSuperAdmin && session.campus) {
+        setActiveCampus(session.campus)
+        setSelectedCampus(session.campus)
+      }
+      setSessionChecked(true)
+    })
 
     return () => {
       active = false
     }
-  }, [])
+  }, [navigate])
 
   useEffect(() => {
     setMobileNavOpen(false)
+    const current = getSelectedCampus()
+    if (current && current !== activeCampus) {
+      setActiveCampus(current)
+    }
   }, [location.pathname])
 
   useEffect(() => {
@@ -92,12 +96,12 @@ function AdminLayout() {
   }, [])
 
   const handleSwitchCampus = () => {
-    window.location.href = '/campus-selector'
+    navigate('/campus-selector')
   }
 
   const handleLogout = async () => {
     await logoutSession()
-    window.location.href = '/admin/login'
+    navigate('/admin/login')
   }
 
   const contextValue = useMemo(
@@ -200,9 +204,9 @@ function AdminLayout() {
                     }}
                     aria-label="Active Campus"
                   >
-                    {ADMIN_CAMPUS_OPTIONS.map((c) => (
+                    {CAMPUS_LIST.map((c) => (
                       <option key={c} value={c}>
-                        {c === ALL_CAMPUSES ? '🌐 ALL CAMPUSES' : c}
+                        {c}
                       </option>
                     ))}
                   </select>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Users,
@@ -83,16 +83,27 @@ function Dashboard() {
   const [todayVisits, setTodayVisits] = useState([])
   const [allVisits, setAllVisits] = useState([])
   const [loading, setLoading] = useState(true)
+  const [switching, setSwitching] = useState(false)
   const [error, setError] = useState('')
   const [qrBusy, setQrBusy] = useState(false)
+  const abortControllerRef = useRef(null)
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isSwitching = false) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     try {
+      if (isSwitching) {
+        setSwitching(true)
+      }
       const authHeaders = getCampusAuthHeaders(activeCampus)
       const [statsRes, visitsRes, todayRes] = await Promise.all([
-        fetch(`${API_URL}/admin/stats`, { headers: authHeaders }),
-        fetch(`${API_URL}/admin/visits?range=all`, { headers: authHeaders }),
-        fetch(`${API_URL}/admin/visits?range=day`, { headers: authHeaders })
+        fetch(`${API_URL}/admin/stats`, { headers: authHeaders, signal: controller.signal }),
+        fetch(`${API_URL}/admin/visits?range=month&limit=250`, { headers: authHeaders, signal: controller.signal }),
+        fetch(`${API_URL}/admin/visits?range=day`, { headers: authHeaders, signal: controller.signal })
       ])
 
       if (!statsRes.ok || !visitsRes.ok || !todayRes.ok) {
@@ -108,20 +119,22 @@ function Dashboard() {
       setAllVisits(visitsData.students || [])
       setTodayVisits(todayData.students || [])
       setError('')
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error)
+    } catch (err) {
+      if (err.name === 'AbortError') return
+      console.error('Error fetching dashboard data:', err)
       setError('Unable to load dashboard data. The connection or session may have expired.')
     } finally {
       setLoading(false)
+      setSwitching(false)
     }
   }, [activeCampus])
 
   useEffect(() => {
-    fetchData()
+    fetchData(true)
   }, [fetchData, refreshKey])
 
   useEffect(() => {
-    const interval = setInterval(fetchData, 5000)
+    const interval = setInterval(() => fetchData(false), 5000)
     return () => clearInterval(interval)
   }, [fetchData])
 
@@ -284,7 +297,9 @@ function Dashboard() {
       <div className="admin-page-heading">
         <div>
           <h1 className="admin-page-title">Dashboard</h1>
-          <p className="admin-page-subtitle">Overview of campus activity and visitor flow</p>
+          <p className="admin-page-subtitle">
+            {switching ? `Updating data for ${activeCampus}...` : 'Overview of campus activity and visitor flow'}
+          </p>
         </div>
         <div className="admin-heading-actions">
           <button type="button" className="admin-btn admin-btn-secondary" onClick={handleDownloadQr} disabled={qrBusy}>
@@ -298,7 +313,7 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="admin-stats-grid">
+      <div className={`admin-stats-grid ${switching ? 'is-switching' : ''}`}>
         {statCards.map((card) => (
           <Link key={card.label} to={card.path} className={`admin-stat-card admin-stat-${card.tone}`} title={`View ${card.label}`}>
             <div className="admin-stat-icon">

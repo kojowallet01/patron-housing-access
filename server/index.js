@@ -20,7 +20,6 @@ import {
   findStudentById,
   insertStudent,
   listStudents,
-  countStudents,
   countNewStudents,
   updateStudentFlag,
   updateStudent,
@@ -37,14 +36,12 @@ import {
   listTokensWithStudents,
   listTokensVerifiedOn,
   listTokensForDate,
-  countVerifiedVisits,
-  countVerifiedVisitsBetween,
-  countAllVerifiedVisits,
   getRetention,
   checkSupabaseHealth,
   countVerifiedVisitsForStudent,
   insertFeedback,
-  listFeedback
+  listFeedback,
+  getCampusStats
 } from './db.js';
 import { sendSingle, sendBulk, health as smsHealth, getConfig as getSmsConfig, fillTemplate } from './sms.js';
 
@@ -868,15 +865,9 @@ app.get('/api/admin/stats', requireAdminAuth, async (req, res) => {
     const thisWeek = getPeriodRange('week');
     const thisMonth = getPeriodRange('month');
 
-    const [totalStudents, todayVisits, thisWeekVisits, thisMonthVisits, totalVisits] = await Promise.all([
-      countStudents(campus),
-      countVerifiedVisits(campus, today),
-      countVerifiedVisitsBetween(campus, thisWeek.start, thisWeek.end),
-      countVerifiedVisitsBetween(campus, thisMonth.start, thisMonth.end),
-      countAllVerifiedVisits(campus)
-    ]);
+    const stats = await getCampusStats(campus, today, thisWeek.start, thisWeek.end, thisMonth.start, thisMonth.end);
 
-    res.json({ campus: campus || 'ALL CAMPUSES', totalStudents, todayVisits, thisWeekVisits, thisMonthVisits, totalVisits });
+    res.json({ campus: campus || 'ALL CAMPUSES', ...stats });
   } catch (error) {
     console.error('Stats error:', error);
     res.status(500).json({ error: 'Failed to fetch statistics' });
