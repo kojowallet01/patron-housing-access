@@ -15,7 +15,14 @@ export const CAMPUS_LIST = [
   'TEMA CAMPUS'
 ];
 
+export const ALL_CAMPUSES = 'ALL CAMPUSES';
+export const ADMIN_CAMPUS_OPTIONS = [
+  ALL_CAMPUSES,
+  ...CAMPUS_LIST
+];
+
 export const CAMPUS_COLORS = {
+  'ALL CAMPUSES': '#4f46e5',
   'TESANO CAMPUS': '#2563eb',
   'CANTOMENT CAMPUS': '#ec4899',
   'ASHIAMAN CAMPUS': '#dc2626',
@@ -30,7 +37,7 @@ export function getSelectedCampus() {
   if (typeof window === 'undefined') return DEFAULT_CAMPUS;
 
   const saved = window.localStorage.getItem(CAMPUS_STORAGE_KEY);
-  if (saved && CAMPUS_LIST.includes(saved)) {
+  if (saved && (CAMPUS_LIST.includes(saved) || saved === ALL_CAMPUSES)) {
     return saved;
   }
 
@@ -41,7 +48,7 @@ export function getSelectedCampus() {
 export function setSelectedCampus(campus) {
   if (typeof window === 'undefined') return;
 
-  const nextCampus = CAMPUS_LIST.includes(campus) ? campus : DEFAULT_CAMPUS;
+  const nextCampus = (CAMPUS_LIST.includes(campus) || campus === ALL_CAMPUSES) ? campus : DEFAULT_CAMPUS;
   window.localStorage.setItem(CAMPUS_STORAGE_KEY, nextCampus);
 }
 

@@ -16,7 +16,14 @@ import {
   Database,
   TrendingUp
 } from 'lucide-react'
-import { API_URL, CAMPUS_INSTITUTE_NAME, setSelectedCampus, getSelectedCampus } from '../../config'
+import {
+  API_URL,
+  CAMPUS_INSTITUTE_NAME,
+  setSelectedCampus,
+  getSelectedCampus,
+  ADMIN_CAMPUS_OPTIONS,
+  ALL_CAMPUSES
+} from '../../config'
 import { validateSession, logoutSession, clearSession } from '../../auth'
 
 export const AdminContext = React.createContext(null)
@@ -181,7 +188,28 @@ function AdminLayout() {
                 {CAMPUS_INSTITUTE_NAME}
               </span>
               <span className="admin-context-sep">•</span>
-              <span className="admin-context-campus">{activeCampus}</span>
+              {isSuperAdmin ? (
+                <div className="admin-campus-dropdown-wrapper">
+                  <select
+                    className="admin-campus-select"
+                    value={activeCampus}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      setActiveCampus(next)
+                      setSelectedCampus(next)
+                    }}
+                    aria-label="Active Campus"
+                  >
+                    {ADMIN_CAMPUS_OPTIONS.map((c) => (
+                      <option key={c} value={c}>
+                        {c === ALL_CAMPUSES ? '🌐 ALL CAMPUSES' : c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <span className="admin-context-campus">{activeCampus}</span>
+              )}
             </div>
           </div>
 

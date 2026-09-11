@@ -2958,6 +2958,43 @@ tr:hover {
   text-overflow: ellipsis;
 }
 
+.admin-campus-dropdown-wrapper {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+
+.admin-campus-select {
+  appearance: none;
+  background: #f8fafc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 5px 32px 5px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.admin-campus-select:hover {
+  border-color: #94a3b8;
+  background-color: #f1f5f9;
+}
+
+.admin-campus-select:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+html[data-theme="dark"] .admin-campus-select {
+  background-color: #1e293b;
+  border-color: #334155;
+  color: #f1f5f9;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
 .admin-topbar-actions {
   display: flex;
   align-items: center;

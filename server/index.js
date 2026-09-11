@@ -384,37 +384,40 @@ function validatePhone(phone) {
 
 async function requireAdminAuth(req, res, next) {
   try {
-    const campus = resolveCampusName(req.get('x-campus') || req.body?.campus || req.query?.campus || DEFAULT_CAMPUS);
+    const rawCampus = req.get('x-campus') || req.body?.campus || req.query?.campus || DEFAULT_CAMPUS;
+    const isAllCampuses = typeof rawCampus === 'string' && (rawCampus.trim().toLowerCase() === 'all' || rawCampus.trim().toLowerCase() === 'all campuses');
+    const campus = isAllCampuses ? null : resolveCampusName(rawCampus);
     const session = await resolveSession(req.get('x-session-token'));
 
     if (session) {
       if (session.role === 'admin' || session.role === 'super-admin' || session.is_super_admin) {
-        req.userCampus = session.is_super_admin ? campus : session.campus;
         req.isSuperAdmin = session.role === 'super-admin' || Boolean(session.is_super_admin);
+        req.userCampus = req.isSuperAdmin ? (isAllCampuses ? null : campus) : session.campus;
         return next();
       }
       return res.status(401).json({ error: 'Admin authentication required' });
     }
 
     const token = req.get('x-admin-token') || req.get('x-super-admin-token') || '';
-    const campusAdminToken = getCampusRoleToken(campus, 'admin');
-    const campusSuperAdminToken = getCampusRoleToken(campus, 'super-admin');
+    const campusForToken = campus || DEFAULT_CAMPUS;
+    const campusAdminToken = getCampusRoleToken(campusForToken, 'admin');
+    const campusSuperAdminToken = getCampusRoleToken(campusForToken, 'super-admin');
     const superAdminMatches = campusSuperAdminToken && isMatchingToken(token, campusSuperAdminToken);
     const campusAdminMatches = campusAdminToken && isMatchingToken(token, campusAdminToken);
 
     if (superAdminMatches || campusAdminMatches) {
-      req.userCampus = campus;
       req.isSuperAdmin = superAdminMatches;
+      req.userCampus = (superAdminMatches && isAllCampuses) ? null : campusForToken;
       return next();
     }
 
     if (ALLOW_UNAUTHENTICATED) {
-      req.userCampus = campus;
+      req.userCampus = isAllCampuses ? null : campusForToken;
       req.isSuperAdmin = false;
       return next();
     }
 
-    if (!hasConfiguredAdminAuth(campus)) {
+    if (!hasConfiguredAdminAuth(campusForToken)) {
       return res.status(503).json({ error: 'Admin authentication is not configured.' });
     }
 
@@ -423,6 +426,23 @@ async function requireAdminAuth(req, res, next) {
     console.error('Admin auth error:', error);
     return res.status(500).json({ error: 'Admin authentication failed' });
   }
+}
+
+function getAdminTargetCampus(req, overrideCampus) {
+  if (!req.isSuperAdmin) {
+    return req.userCampus;
+  }
+  const candidate = overrideCampus !== undefined ? overrideCampus : (req.query?.campus || req.body?.campus || req.get('x-campus'));
+  if (candidate !== undefined && candidate !== null) {
+    const trimmed = String(candidate).trim();
+    if (trimmed.toLowerCase() === 'all' || trimmed.toLowerCase() === 'all campuses') {
+      return null;
+    }
+    if (trimmed) {
+      return resolveCampusName(trimmed);
+    }
+  }
+  return req.userCampus;
 }
 
 async function requireSecurityAuth(req, res, next) {
@@ -813,8 +833,9 @@ app.post('/api/super-admin/passwords', requireAdminAuth, async (req, res) => {
 
 app.get('/api/admin/today', requireAdminAuth, async (req, res) => {
   try {
+    const targetCampus = getAdminTargetCampus(req);
     const today = currentDateString();
-    const rows = await listTokensVerifiedOn(req.isSuperAdmin ? null : req.userCampus, today);
+    const rows = await listTokensVerifiedOn(targetCampus, today);
     const students = rows.map(token => ({
       name: token.name,
       phone: token.phone,
@@ -822,7 +843,7 @@ app.get('/api/admin/today', requireAdminAuth, async (req, res) => {
       campus: token.campus,
       used_at: token.used_at
     }));
-    res.json({ date: today, count: students.length, students });
+    res.json({ date: today, count: students.length, students, campus: targetCampus || 'ALL CAMPUSES' });
   } catch (error) {
     console.error('Admin query error:', error);
     res.status(500).json({ error: 'Failed to fetch data' });
@@ -831,8 +852,9 @@ app.get('/api/admin/today', requireAdminAuth, async (req, res) => {
 
 app.get('/api/admin/students', requireAdminAuth, async (req, res) => {
   try {
-    const rows = await listStudents(req.isSuperAdmin ? null : req.userCampus);
-    res.json({ count: rows.length, students: rows });
+    const targetCampus = getAdminTargetCampus(req);
+    const rows = await listStudents(targetCampus);
+    res.json({ count: rows.length, students: rows, campus: targetCampus || 'ALL CAMPUSES' });
   } catch (error) {
     console.error('Admin query error:', error);
     res.status(500).json({ error: 'Failed to fetch students' });
@@ -841,7 +863,7 @@ app.get('/api/admin/students', requireAdminAuth, async (req, res) => {
 
 app.get('/api/admin/stats', requireAdminAuth, async (req, res) => {
   try {
-    const campus = req.isSuperAdmin ? null : req.userCampus;
+    const campus = getAdminTargetCampus(req);
     const today = currentDateString();
     const thisWeek = getPeriodRange('week');
     const thisMonth = getPeriodRange('month');
@@ -854,7 +876,7 @@ app.get('/api/admin/stats', requireAdminAuth, async (req, res) => {
       countAllVerifiedVisits(campus)
     ]);
 
-    res.json({ totalStudents, todayVisits, thisWeekVisits, thisMonthVisits, totalVisits });
+    res.json({ campus: campus || 'ALL CAMPUSES', totalStudents, todayVisits, thisWeekVisits, thisMonthVisits, totalVisits });
   } catch (error) {
     console.error('Stats error:', error);
     res.status(500).json({ error: 'Failed to fetch statistics' });
@@ -866,7 +888,7 @@ app.get('/api/admin/visits', requireAdminAuth, async (req, res) => {
     const { range = 'day', start, end, campus, purpose } = req.query;
     let periodStart = start;
     let periodEnd = end;
-    const campusName = resolveCampusName(campus || req.userCampus || DEFAULT_CAMPUS);
+    const targetCampus = getAdminTargetCampus(req, campus);
 
     if (!periodStart || !periodEnd) {
       const rangeDates = getPeriodRange(range);
@@ -878,7 +900,7 @@ app.get('/api/admin/visits', requireAdminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid date range format. Use YYYY-MM-DD.' });
     }
 
-    const rows = await listTokensWithStudents(req.isSuperAdmin ? null : campusName, periodStart, periodEnd);
+    const rows = await listTokensWithStudents(targetCampus, periodStart, periodEnd);
 
     const purposeCounts = {};
     rows.forEach(v => {
@@ -903,7 +925,7 @@ app.get('/api/admin/visits', requireAdminAuth, async (req, res) => {
       valid_date: v.valid_date
     }));
 
-    res.json({ range, start: periodStart, end: periodEnd, count: students.length, students, purposes });
+    res.json({ range, start: periodStart, end: periodEnd, count: students.length, students, purposes, campus: targetCampus || 'ALL CAMPUSES' });
   } catch (error) {
     console.error('Visits query error:', error);
     res.status(500).json({ error: 'Failed to fetch visit data' });
@@ -912,9 +934,9 @@ app.get('/api/admin/visits', requireAdminAuth, async (req, res) => {
 
 app.get('/api/admin/retention', requireAdminAuth, async (req, res) => {
   try {
-    const campus = req.isSuperAdmin ? null : req.userCampus;
+    const campus = getAdminTargetCampus(req);
     const result = await getRetention(campus);
-    res.json(result);
+    res.json({ ...result, campus: campus || 'ALL CAMPUSES' });
   } catch (error) {
     console.error('Retention query error:', error);
     res.status(500).json({ error: 'Failed to fetch retention data' });
@@ -923,7 +945,7 @@ app.get('/api/admin/retention', requireAdminAuth, async (req, res) => {
 
 app.post('/api/admin/retention/auto-campaign', requireAdminAuth, async (req, res) => {
   try {
-    const campus = req.isSuperAdmin ? null : req.userCampus;
+    const campus = getAdminTargetCampus(req, req.body?.campus);
     const retentionData = await getRetention(campus);
     const records = retentionData.records || [];
 
@@ -1024,7 +1046,7 @@ app.post('/api/feedback', async (req, res) => {
 
 app.get('/api/admin/feedback', requireAdminAuth, async (req, res) => {
   try {
-    const campus = req.isSuperAdmin ? null : req.userCampus;
+    const campus = getAdminTargetCampus(req);
     const items = await listFeedback(campus, 100);
     const total = items.length;
     const avgRating = total > 0
@@ -1040,6 +1062,7 @@ app.get('/api/admin/feedback', requireAdminAuth, async (req, res) => {
 
     res.json({
       success: true,
+      campus: campus || 'ALL CAMPUSES',
       total,
       avgRating,
       ratingsBreakdown,
@@ -1079,10 +1102,11 @@ app.post('/api/sms/send', requireAdminAuth, async (req, res) => {
 
 app.get('/api/admin/analytics', requireAdminAuth, async (req, res) => {
   try {
-    const { range = 'day' } = req.query;
+    const { range = 'day', campus } = req.query;
+    const targetCampus = getAdminTargetCampus(req, campus);
     const period = getPeriodRange(range);
 
-    const visitors = await listTokensWithStudents(req.isSuperAdmin ? null : req.userCampus, period.start, period.end);
+    const visitors = await listTokensWithStudents(targetCampus, period.start, period.end);
 
     const peakHours = Array(24).fill(0);
     const purposeCounts = {};
@@ -1100,7 +1124,7 @@ app.get('/api/admin/analytics', requireAdminAuth, async (req, res) => {
     const uniqueVisitors = Object.keys(visitorCounts).length;
     const returningVisitors = Object.values(visitorCounts).filter(count => count > 1).length;
 
-    const newStudents = await countNewStudents(req.isSuperAdmin ? null : req.userCampus, period.start, period.end);
+    const newStudents = await countNewStudents(targetCampus, period.start, period.end);
 
     const purposes = Object.entries(purposeCounts)
       .map(([purpose, count]) => ({ purpose, count }))
@@ -1110,6 +1134,7 @@ app.get('/api/admin/analytics', requireAdminAuth, async (req, res) => {
       range,
       start: period.start,
       end: period.end,
+      campus: targetCampus || 'ALL CAMPUSES',
       totalVisits: visitors.length,
       uniqueVisitors,
       returningVisitors,
@@ -1296,13 +1321,14 @@ app.get('/api/admin/system-info', requireAdminAuth, async (req, res) => {
 
 app.get('/api/admin/tokens/qr', requireAdminAuth, async (req, res) => {
   try {
+    const targetCampus = getAdminTargetCampus(req);
     const date = req.query.date || currentDateString();
-    const tokens = await listTokensForDate(req.userCampus, date);
+    const tokens = await listTokensForDate(targetCampus, date);
     const withQR = [];
     for (const t of tokens) {
       withQR.push({ ...t, tokenQR: await QRCode.toDataURL(t.token, { width: 400, margin: 1 }) });
     }
-    res.json({ date, count: withQR.length, tokens: withQR });
+    res.json({ date, count: withQR.length, tokens: withQR, campus: targetCampus || 'ALL CAMPUSES' });
   } catch (error) {
     console.error('Tokens QR error:', error);
     res.status(500).json({ error: 'Failed to load QR codes' });

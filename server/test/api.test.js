@@ -371,3 +371,43 @@ test('token response contains loyalty milestone', async () => {
   assert.ok(gen.data.milestone.badge);
 });
 
+test('super-admin queries respect campus selection (Ashaiman shows 0, Tesano shows registered count)', async () => {
+  const ashaimanHeaders = {
+    'x-super-admin-token': 'test-super-admin-token',
+    'x-campus': 'ASHIAMAN CAMPUS'
+  };
+
+  const tesanoHeaders = {
+    'x-super-admin-token': 'test-super-admin-token',
+    'x-campus': 'TESANO CAMPUS'
+  };
+
+  // 1. Check students list for Ashaiman
+  const ashaimanStudents = await api('GET', '/api/admin/students', null, ashaimanHeaders);
+  assert.equal(ashaimanStudents.status, 200);
+  assert.equal(ashaimanStudents.data.count, 0);
+  assert.equal(ashaimanStudents.data.students.length, 0);
+
+  // 2. Check stats for Ashaiman
+  const ashaimanStats = await api('GET', '/api/admin/stats', null, ashaimanHeaders);
+  assert.equal(ashaimanStats.status, 200);
+  assert.equal(ashaimanStats.data.totalStudents, 0);
+  assert.equal(ashaimanStats.data.campus, 'ASHIAMAN CAMPUS');
+
+  // 3. Check stats for Tesano
+  const tesanoStats = await api('GET', '/api/admin/stats', null, tesanoHeaders);
+  assert.equal(tesanoStats.status, 200);
+  assert.ok(tesanoStats.data.totalStudents >= 3);
+  assert.equal(tesanoStats.data.campus, 'TESANO CAMPUS');
+
+  // 4. Check ALL CAMPUSES overview
+  const allHeaders = {
+    'x-super-admin-token': 'test-super-admin-token',
+    'x-campus': 'ALL CAMPUSES'
+  };
+  const allStats = await api('GET', '/api/admin/stats', null, allHeaders);
+  assert.equal(allStats.status, 200);
+  assert.ok(allStats.data.totalStudents >= tesanoStats.data.totalStudents);
+  assert.equal(allStats.data.campus, 'ALL CAMPUSES');
+});
+
