@@ -4,12 +4,14 @@ const CAMPUS_LOGO_FILES = {
   'TESANO CAMPUS': '/logo-tesano.png',
   'LEGON CAMPUS': '/logo-legon.png',
   'CANTOMENT CAMPUS': '/logo-cantoment.png',
-  'TEMA CAMPUS': '/logo-tema.png'
+  'TEMA CAMPUS': '/logo-tema.png',
+  'ASHIAMAN CAMPUS': '/logo-ashaiman.png'
 }
 
 const CAMPUS_LOGO_BG = {
   ...CAMPUS_COLORS,
-  'CANTOMENT CAMPUS': '#831843'
+  'CANTOMENT CAMPUS': '#831843',
+  'ASHIAMAN CAMPUS': '#ffffff'
 }
 
 function CampusLogo({ campus, className = '', style = {}, ...props }) {
