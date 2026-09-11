@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, Printer, Tag, CalendarRange, ArrowLeft } from 'lucide-react'
+import { Download, Printer, Tag, CalendarRange, ArrowLeft, RefreshCw } from 'lucide-react'
 import { API_URL, getCampusAuthHeaders } from '../../config'
 import { useAdminContext } from '../admin/AdminLayout'
 
@@ -88,6 +88,16 @@ export default function ByPurpose() {
             <CalendarRange size={15} strokeWidth={2} />
             {data ? `${data.start} → ${data.end}` : 'Loading…'}
           </span>
+          <button
+            type="button"
+            className="admin-btn admin-btn-secondary"
+            onClick={fetchReport}
+            disabled={loading}
+            title="Refresh report data"
+          >
+            <RefreshCw size={16} strokeWidth={2} className={loading ? 'spin-icon' : ''} />
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
           <button
             type="button"
             className="admin-btn admin-btn-secondary"

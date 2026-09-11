@@ -3338,6 +3338,84 @@ html[data-theme="dark"] .admin-login-back:hover {
   cursor: not-allowed;
 }
 
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-icon {
+  animation: spin 0.65s linear infinite;
+  display: inline-block;
+}
+
+.security-refresh-wrap {
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+}
+
+.security-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.security-refresh-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.35);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: translateY(-1px);
+}
+
+.security-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.access-refresh-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 14px 0 6px;
+}
+
+.access-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.access-refresh-btn:hover:not(:disabled) {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.access-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .admin-btn-primary {
   background: linear-gradient(135deg, #4f46e5, #6366f1);
   color: #ffffff;

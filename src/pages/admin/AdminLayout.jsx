@@ -91,8 +91,14 @@ function AdminLayout() {
     return () => { active = false; clearInterval(interval) }
   }, [])
 
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
   const refresh = useCallback(() => {
+    setIsRefreshing(true)
     setRefreshKey((key) => key + 1)
+    setTimeout(() => {
+      setIsRefreshing(false)
+    }, 700)
   }, [])
 
   const handleSwitchCampus = () => {
@@ -105,8 +111,8 @@ function AdminLayout() {
   }
 
   const contextValue = useMemo(
-    () => ({ activeCampus, isSuperAdmin, refreshKey, refresh }),
-    [activeCampus, isSuperAdmin, refreshKey, refresh]
+    () => ({ activeCampus, isSuperAdmin, refreshKey, refresh, isRefreshing }),
+    [activeCampus, isSuperAdmin, refreshKey, refresh, isRefreshing]
   )
 
   if (!sessionChecked) {
@@ -228,9 +234,15 @@ function AdminLayout() {
                 Switch Campus
               </button>
             )}
-            <button type="button" className="admin-btn admin-btn-primary" onClick={refresh}>
-              <RefreshCw size={16} strokeWidth={2} />
-              Refresh
+            <button
+              type="button"
+              className="admin-btn admin-btn-primary"
+              onClick={refresh}
+              disabled={isRefreshing}
+              title="Refresh portal data"
+            >
+              <RefreshCw size={16} strokeWidth={2} className={isRefreshing ? 'spin-icon' : ''} />
+              <span>{isRefreshing ? 'Refreshing…' : 'Refresh'}</span>
             </button>
           </div>
         </header>

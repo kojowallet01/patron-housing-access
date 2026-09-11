@@ -27,7 +27,7 @@ import { useAdminContext } from './AdminLayout'
 import { logoutSession } from '../../auth'
 
 function Settings() {
-  const { activeCampus, isSuperAdmin, refresh } = useAdminContext()
+  const { activeCampus, isSuperAdmin, refresh, refreshKey, isRefreshing } = useAdminContext()
   const navigate = useNavigate()
 
   const [stats, setStats] = useState(null)
@@ -84,7 +84,7 @@ function Settings() {
     loadSystemInfo()
     loadQr()
     loadPasswords()
-  }, [loadStats, loadSystemInfo, loadQr, loadPasswords])
+  }, [loadStats, loadSystemInfo, loadQr, loadPasswords, refreshKey])
 
   const handleBackup = async () => {
     setBackingUp(true)
@@ -428,9 +428,14 @@ function Settings() {
             </div>
           </div>
           <div className="admin-settings-actions">
-            <button type="button" className="admin-btn admin-btn-primary" onClick={refresh}>
-              <RefreshCw size={16} strokeWidth={2} />
-              Refresh Dashboard Data
+            <button
+              type="button"
+              className="admin-btn admin-btn-primary"
+              onClick={refresh}
+              disabled={isRefreshing}
+            >
+              <RefreshCw size={16} strokeWidth={2} className={isRefreshing ? 'spin-icon' : ''} />
+              <span>{isRefreshing ? 'Refreshing…' : 'Refresh Dashboard Data'}</span>
             </button>
             <Link to="/admin/students" className="admin-settings-link">
               <Users size={16} strokeWidth={2} />

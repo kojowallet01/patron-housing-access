@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { RefreshCw } from 'lucide-react'
 import { API_URL, CAMPUS_INSTITUTE_NAME } from '../config'
 
 function AccessQR() {
@@ -77,6 +78,19 @@ function AccessQR() {
               )
             )
           )}
+        </div>
+
+        <div className="access-refresh-wrap">
+          <button
+            type="button"
+            className="access-refresh-btn"
+            onClick={() => fetchQRCode(campus)}
+            disabled={loading}
+            title="Refresh access QR code"
+          >
+            <RefreshCw size={14} className={loading ? 'spin-icon' : ''} />
+            <span>{loading ? 'Refreshing…' : 'Refresh QR Code'}</span>
+          </button>
         </div>
 
         {qrCode?.registrationUrl && (

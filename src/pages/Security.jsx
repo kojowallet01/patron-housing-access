@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Html5QrcodeScanner } from 'html5-qrcode'
+import { RefreshCw } from 'lucide-react'
 import { API_URL, CAMPUS_INSTITUTE_NAME, getCampusAuthHeaders, getSelectedCampus } from '../config'
 import { validateSession } from '../auth'
 
 function Security() {
+  const navigate = useNavigate()
   const [activeCampus, setActiveCampus] = useState(getSelectedCampus())
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [tokenDigits, setTokenDigits] = useState(['', '', '', ''])
@@ -11,8 +14,33 @@ function Security() {
   const [verifying, setVerifying] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [sessionChecked, setSessionChecked] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const digitRefs = [useRef(null), useRef(null), useRef(null), useRef(null)]
   const handleVerifyRef = useRef(null)
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      const session = await validateSession()
+      if (session.valid) {
+        setIsSuperAdmin(Boolean(session.isSuperAdmin))
+        if (!session.isSuperAdmin) {
+          setActiveCampus(session.campus || getSelectedCampus())
+        }
+      }
+    } catch (err) {
+      console.error('Security refresh error:', err)
+    }
+    setTokenDigits(['', '', '', ''])
+    setResult(null)
+    setScanning(false)
+    if (digitRefs[0]?.current) {
+      digitRefs[0].current.focus()
+    }
+    setTimeout(() => {
+      setRefreshing(false)
+    }, 600)
+  }
 
   const setDigit = (index, value) => {
     const clean = value.replace(/\D/g, '').slice(0, 1)
@@ -173,6 +201,18 @@ function Security() {
         <img src="/logo.png" alt="AIFSP" className="page-logo-small" />
         <h1>Security Verification</h1>
         <p>{CAMPUS_INSTITUTE_NAME} • {activeCampus}</p>
+        <div className="security-refresh-wrap">
+          <button
+            type="button"
+            className="security-refresh-btn"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh security portal"
+          >
+            <RefreshCw size={15} className={refreshing ? 'spin-icon' : ''} />
+            <span>{refreshing ? 'Refreshing…' : 'Refresh'}</span>
+          </button>
+        </div>
       </div>
 
       <div className="security-content">
@@ -290,7 +330,7 @@ function Security() {
 
       <div className="security-footer">
         {isSuperAdmin && (
-          <button className="btn btn-secondary" onClick={() => window.location.href = '/campus-selector'}>
+          <button className="btn btn-secondary" onClick={() => navigate('/campus-selector')}>
             Switch Campus
           </button>
         )}
