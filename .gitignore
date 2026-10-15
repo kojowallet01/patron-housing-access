@@ -16,6 +16,13 @@ db.json
 .env.local
 .env.*.local
 
+# Security - Password documentation
+PASSWORDS.md
+passwords.txt
+*.password
+QUICK_LOGIN_GUIDE.txt
+PASSWORD_RESET_COMPLETE.md
+
 # Logs
 logs/
 *.log
