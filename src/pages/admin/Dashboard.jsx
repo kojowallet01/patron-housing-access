@@ -134,7 +134,7 @@ function Dashboard() {
   }, [fetchData, refreshKey])
 
   useEffect(() => {
-    const interval = setInterval(() => fetchData(false), 5000)
+    const interval = setInterval(() => fetchData(false), 30000)
     return () => clearInterval(interval)
   }, [fetchData])
 

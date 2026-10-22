@@ -52,7 +52,8 @@ function RoleGate({ role, children }) {
     setError('')
   }
 
-  const handleUnlock = async () => {
+  const handleUnlock = async (event) => {
+    event.preventDefault()
     const trimmedPassword = password.trim()
 
     if (!trimmedPassword) {
@@ -153,29 +154,30 @@ function RoleGate({ role, children }) {
           </select>
         </div>
 
-        {selectedCampus && (
-          <div className="login-field">
-            <label htmlFor="password-input">Password</label>
-            <input
-              id="password-input"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
-              placeholder={`Enter ${selectedRole.replace('-', ' ')} password`}
-            />
-          </div>
-        )}
+        <form onSubmit={handleUnlock}>
+          {selectedCampus && (
+            <div className="login-field">
+              <label htmlFor="password-input">Password</label>
+              <input
+                id="password-input"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={`Enter ${selectedRole.replace('-', ' ')} password`}
+              />
+            </div>
+          )}
 
-        {error && (
-          <div className="alert alert-error login-alert">
-            {error}
-          </div>
-        )}
+          {error && (
+            <div className="alert alert-error login-alert">
+              {error}
+            </div>
+          )}
 
-        <button className="login-button" onClick={handleUnlock}>
-          LOG IN
-        </button>
+          <button className="login-button" type="submit">
+            LOG IN
+          </button>
+        </form>
       </div>
     </div>
   )
