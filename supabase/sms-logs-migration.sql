@@ -11,3 +11,5 @@ create table if not exists public.sms_logs (
 );
 
 create index if not exists idx_sms_logs_campus_created on public.sms_logs (campus, created_at);
+
+alter table public.sms_logs enable row level security;

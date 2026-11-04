@@ -323,6 +323,269 @@ test('retention endpoint classifies students by visit recency', async () => {
   assert.equal(data.summary.returning >= 2, true);
 });
 
+test('admin can opt a member out of SMS and retention reflects the preference', async () => {
+  const updated = await api('POST', '/api/admin/students/ret-new/sms-preference', { opted_out: true }, SUPER_ADMIN_HEADERS);
+  assert.equal(updated.status, 200);
+  assert.equal(updated.data.sms_opt_out, true);
+
+  const retention = await api('GET', '/api/admin/retention', null, SUPER_ADMIN_HEADERS);
+  const record = retention.data.records.find((row) => row.id === 'ret-new');
+  assert.equal(record.sms_opt_out, true);
+
+  const env = {
+    SMS_ENABLED: process.env.SMS_ENABLED,
+    SMS_PROVIDER: process.env.SMS_PROVIDER,
+    SMS_API_KEY: process.env.SMS_API_KEY,
+    SMS_SENDER_ID: process.env.SMS_SENDER_ID
+  };
+  process.env.SMS_ENABLED = 'true';
+  process.env.SMS_PROVIDER = 'arkesel';
+  process.env.SMS_API_KEY = 'test-key';
+  process.env.SMS_SENDER_ID = 'AIFSP';
+  try {
+    const send = await api('POST', '/api/sms/send', {
+      recipients: [{ id: 'ret-new' }],
+      message: 'Test'
+    }, SUPER_ADMIN_HEADERS);
+    assert.equal(send.status, 400);
+    assert.match(send.data.error, /opted out/i);
+  } finally {
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('retention settings validate templates and cooldown', async () => {
+  const initial = await api('GET', '/api/admin/retention/settings', null, SUPER_ADMIN_HEADERS);
+  assert.equal(initial.status, 200);
+  assert.equal(initial.data.settings.cooldownDays, 7);
+
+  const invalid = await api('PUT', '/api/admin/retention/settings', {
+    firstTimeFollowUp: 'Hello',
+    atRiskWinback: 'Welcome back',
+    cooldownDays: 0
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(invalid.status, 400);
+
+  const saved = await api('PUT', '/api/admin/retention/settings', {
+    firstTimeFollowUp: 'Hello {name} at {campus}',
+    atRiskWinback: 'We miss you, {name}',
+    cooldownDays: 10
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.data.settings.cooldownDays, 10);
+});
+
+test('auto campaign preview explains eligible and cooldown-excluded members and requires confirmation', async () => {
+  const now = Date.now();
+  const visitAt = new Date(now - 5 * 24 * 60 * 60 * 1000).toISOString();
+  await db.insertStudent({
+    id: 'ret-campaign-first',
+    name: 'Campaign First Visit',
+    phone: '+233 50 100 0090',
+    purpose: 'Student',
+    campus: 'TESANO CAMPUS',
+    created_at: visitAt
+  });
+  await db.insertToken({
+    id: 't-ret-campaign-first',
+    student_id: 'ret-campaign-first',
+    campus: 'TESANO CAMPUS',
+    token: '8090',
+    valid_date: visitAt.slice(0, 10),
+    created_at: visitAt,
+    used_at: visitAt,
+    verified_at: visitAt
+  });
+
+  const preview = await api('GET', '/api/admin/retention/auto-campaign/preview', null, SUPER_ADMIN_HEADERS);
+  assert.equal(preview.status, 200);
+  assert.ok(preview.data.recipients.some((row) => row.id === 'ret-campaign-first'));
+
+  const unconfirmed = await api('POST', '/api/admin/retention/auto-campaign', {}, SUPER_ADMIN_HEADERS);
+  assert.equal(unconfirmed.status, 400);
+
+  await db.insertSmsLogs([{
+    id: 'ret-cooldown-log',
+    campus: 'TESANO CAMPUS',
+    recipient_name: 'Campaign First Visit',
+    recipient_phone_masked: '***0090',
+    recipient_id: 'ret-campaign-first',
+    provider: 'arkesel',
+    status: 'accepted',
+    source: 'first-time-followup',
+    created_at: new Date().toISOString()
+  }]);
+  const cooled = await api('GET', '/api/admin/retention/auto-campaign/preview', null, SUPER_ADMIN_HEADERS);
+  assert.equal(cooled.status, 200);
+  assert.equal(cooled.data.recipients.some((row) => row.id === 'ret-campaign-first'), false);
+  assert.ok(cooled.data.cohorts.excludedCooldown >= 1);
+
+  const confirmed = await api('POST', '/api/admin/retention/auto-campaign', {
+    confirm: true,
+    recipient_ids: ['ret-campaign-first'],
+    settings: cooled.data.settings
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(confirmed.status, 200);
+  assert.equal(confirmed.data.cohorts.totalEligible, 0);
+});
+
+test('retention campaign schedules can be created, listed, and cancelled', async () => {
+  const visitAt = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+  await db.insertStudent({
+    id: 'ret-scheduled-member',
+    name: 'Scheduled Member',
+    phone: '+233 50 100 0091',
+    purpose: 'Student',
+    campus: 'TESANO CAMPUS',
+    created_at: visitAt
+  });
+  await db.insertToken({
+    id: 't-ret-scheduled-member',
+    student_id: 'ret-scheduled-member',
+    campus: 'TESANO CAMPUS',
+    token: '8091',
+    valid_date: visitAt.slice(0, 10),
+    created_at: visitAt,
+    used_at: visitAt,
+    verified_at: visitAt
+  });
+  const preview = await api('GET', '/api/admin/retention/auto-campaign/preview', null, SUPER_ADMIN_HEADERS);
+  const scheduledMember = preview.data.recipients.find((row) => row.id === 'ret-scheduled-member');
+  assert.ok(scheduledMember);
+  const runAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const created = await api('POST', '/api/admin/retention/schedules', {
+    run_at: runAt,
+    recipient_ids: [scheduledMember.id],
+    settings: preview.data.settings
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(created.status, 201);
+  assert.equal(created.data.schedule.status, 'scheduled');
+  assert.deepEqual(created.data.schedule.recipient_ids, [scheduledMember.id]);
+
+  const listed = await api('GET', '/api/admin/retention/schedules', null, SUPER_ADMIN_HEADERS);
+  assert.ok(listed.data.schedules.some((schedule) => schedule.id === created.data.schedule.id));
+
+  const cancelled = await api('DELETE', `/api/admin/retention/schedules/${created.data.schedule.id}`, null, SUPER_ADMIN_HEADERS);
+  assert.equal(cancelled.status, 200);
+  const cancelledAgain = await api('DELETE', `/api/admin/retention/schedules/${created.data.schedule.id}`, null, SUPER_ADMIN_HEADERS);
+  assert.equal(cancelledAgain.status, 404);
+});
+
+test('due retention schedules are claimed once and can be marked complete', async () => {
+  const now = new Date().toISOString();
+  await db.insertRetentionSchedule({
+    id: 'ret-due-schedule-test',
+    campus: 'TESANO CAMPUS',
+    run_at: new Date(Date.now() - 60_000).toISOString(),
+    status: 'scheduled',
+    templates: { firstTimeFollowUp: 'Hello {name}', atRiskWinback: 'Welcome {name}' },
+    recipient_ids: ['ret-scheduled-member'],
+    cooldown_days: 7,
+    created_at: now,
+    updated_at: now
+  });
+  const claimed = await db.claimDueRetentionSchedules(now, 10);
+  assert.ok(claimed.some((schedule) => schedule.id === 'ret-due-schedule-test'));
+  const claimedAgain = await db.claimDueRetentionSchedules(new Date().toISOString(), 10);
+  assert.equal(claimedAgain.some((schedule) => schedule.id === 'ret-due-schedule-test'), false);
+
+  await db.updateRetentionSchedule('ret-due-schedule-test', 'completed', { sms: { sent: 1 } });
+  const listed = await db.listRetentionSchedules('TESANO CAMPUS');
+  const schedule = listed.find((item) => item.id === 'ret-due-schedule-test');
+  assert.equal(schedule.status, 'completed');
+  assert.equal(schedule.result.sms.sent, 1);
+});
+
+test('campaign analytics counts verified returns after accepted campaign messages', async () => {
+  const now = Date.now();
+  const sentAt = new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString();
+  const returnedAt = new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString();
+  await db.insertStudent({
+    id: 'ret-return-after-sms',
+    name: 'Returned After SMS',
+    phone: '+233 50 100 0092',
+    purpose: 'Student',
+    campus: 'TESANO CAMPUS',
+    created_at: sentAt
+  });
+  await db.insertToken({
+    id: 't-ret-return-after-sms',
+    student_id: 'ret-return-after-sms',
+    campus: 'TESANO CAMPUS',
+    token: '8092',
+    valid_date: returnedAt.slice(0, 10),
+    created_at: returnedAt,
+    used_at: returnedAt,
+    verified_at: returnedAt
+  });
+  await db.insertSmsLogs([{
+    id: 'ret-return-after-sms-log',
+    campus: 'TESANO CAMPUS',
+    recipient_name: 'Returned After SMS',
+    recipient_phone_masked: '***0092',
+    recipient_id: 'ret-return-after-sms',
+    provider: 'termii',
+    status: 'accepted',
+    source: 'first-time-followup',
+    created_at: sentAt
+  }, {
+    id: 'ret-failed-return-log',
+    campus: 'TESANO CAMPUS',
+    recipient_name: 'Returned After SMS',
+    recipient_phone_masked: '***0092',
+    recipient_id: 'ret-return-after-sms',
+    provider: 'termii',
+    status: 'failed',
+    source: 'first-time-followup',
+    created_at: new Date(Date.parse(sentAt) + 60_000).toISOString()
+  }]);
+
+  const analytics = await api('GET', '/api/admin/retention/analytics', null, SUPER_ADMIN_HEADERS);
+  assert.equal(analytics.status, 200);
+  const followUp = analytics.data.cohorts.find((cohort) => cohort.source === 'first-time-followup');
+  assert.equal(followUp.returnedAfterSend, 1);
+});
+
+test('authenticated SMS delivery callback updates provider delivery status', async () => {
+  await db.insertSmsLogs([{
+    id: 'sms-delivery-callback-test',
+    campus: 'TESANO CAMPUS',
+    recipient_name: 'Delivery Test Recipient',
+    recipient_phone_masked: '***7788',
+    provider: 'termii',
+    provider_message_id: 'provider-message-7788',
+    status: 'accepted',
+    delivery_status: 'pending',
+    source: 'manual-broadcast',
+    created_at: new Date().toISOString()
+  }]);
+
+  const oldToken = process.env.SMS_DELIVERY_WEBHOOK_TOKEN;
+  process.env.SMS_DELIVERY_WEBHOOK_TOKEN = 'test-delivery-webhook-token';
+  try {
+    const unauthorized = await api('POST', '/api/sms/delivery', {
+      provider_message_id: 'provider-message-7788',
+      delivery_status: 'delivered'
+    });
+    assert.equal(unauthorized.status, 401);
+
+    const delivered = await api('POST', '/api/sms/delivery', {
+      provider_message_id: 'provider-message-7788',
+      delivery_status: 'delivered'
+    }, { 'x-sms-webhook-token': 'test-delivery-webhook-token' });
+    assert.equal(delivered.status, 200);
+
+    const logs = await api('GET', '/api/admin/sms/logs', null, SUPER_ADMIN_HEADERS);
+    assert.equal(logs.data.logs.find((log) => log.id === 'sms-delivery-callback-test').delivery_status, 'delivered');
+  } finally {
+    if (oldToken === undefined) delete process.env.SMS_DELIVERY_WEBHOOK_TOKEN;
+    else process.env.SMS_DELIVERY_WEBHOOK_TOKEN = oldToken;
+  }
+});
+
 test('SMS status reports disabled when not configured', async () => {
   const { status, data } = await api('GET', '/api/sms/status', null, SUPER_ADMIN_HEADERS);
   assert.equal(status, 200);

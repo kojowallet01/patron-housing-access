@@ -36,3 +36,5 @@ services:
         sync: false
       - key: CAMPUS_SECURITY_TOKENS
         sync: false
+      - key: SMS_DELIVERY_WEBHOOK_TOKEN
+        sync: false

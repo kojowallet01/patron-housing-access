@@ -113,8 +113,27 @@ failed, and skipped attempts with masked phone numbers; provider acceptance does
 not confirm delivery to a handset.
 
 For an existing Supabase project, run `supabase/sms-logs-migration.sql` in the
-Supabase SQL Editor before deploying this SMS history feature. New projects can
-use the updated `supabase/schema.sql`.
+Supabase SQL Editor if the SMS history table has not been created yet. To enable
+the retention campaign, opt-out, scheduling, and delivery tracking additions,
+run `supabase/retention-features-migration.sql` as well. New projects can use the
+updated `supabase/schema.sql`.
+
+The Retention page supports per-campus drip templates, a 1–90 day repeat-send
+cooldown (7 days by default), an eligible-recipient preview, scheduling in
+Africa/Accra time, and an admin-managed SMS opt-out. Existing saved phone
+numbers remain eligible unless an admin opts a member out. Configure provider
+STOP/opt-out handling in the provider account and reflect opt-outs in the
+member's SMS preference in Retention; this app does not receive inbound SMS.
+
+Campaign history shows provider acceptance separately from confirmed handset
+delivery. For delivery updates, set `SMS_DELIVERY_WEBHOOK_TOKEN` on the server
+and configure a provider callback or trusted webhook relay to POST
+`provider_message_id` and `delivery_status` (`delivered`, `failed`,
+`undelivered`, `expired`, or `rejected`) to `/api/sms/delivery` with the token in
+the `x-sms-webhook-token` header. The app captures provider message IDs when
+they are included in send responses. Return-visit metrics count verified visits
+after an accepted campaign message; they show association, not proof that the
+SMS caused the return.
 
 ## Technology Stack
 

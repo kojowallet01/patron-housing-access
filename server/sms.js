@@ -101,6 +101,22 @@ async function sendArkesel(cfg, to, message, from) {
   }
 }
 
+function getProviderMessageId(response) {
+  const candidates = [
+    response?.message_id,
+    response?.messageId,
+    response?.id,
+    response?.data?.message_id,
+    response?.data?.messageId,
+    response?.data?.id,
+    response?.data?.[0]?.message_id,
+    response?.data?.[0]?.messageId,
+    response?.data?.[0]?.id
+  ];
+  const messageId = candidates.find((candidate) => candidate !== undefined && candidate !== null);
+  return messageId === undefined ? null : String(messageId);
+}
+
 async function sendSingle({ to, message, from }) {
   const cfg = getConfig();
   if (!cfg.enabled || !cfg.apiKey) {
@@ -110,14 +126,20 @@ async function sendSingle({ to, message, from }) {
     return { sent: false, skipped: true, reason: 'Missing recipient or message' };
   }
   try {
+    let response;
     if (cfg.provider === 'termii') {
-      await sendTermii(cfg, to, message, from);
+      response = await sendTermii(cfg, to, message, from);
     } else if (cfg.provider === 'arkesel') {
-      await sendArkesel(cfg, to, message, from);
+      response = await sendArkesel(cfg, to, message, from);
     } else {
       return { sent: false, skipped: true, reason: `Unsupported provider: ${cfg.provider}` };
     }
-    return { sent: true, provider: cfg.provider, to: normalizePhone(to) };
+    return {
+      sent: true,
+      provider: cfg.provider,
+      to: normalizePhone(to),
+      providerMessageId: getProviderMessageId(response)
+    };
   } catch (error) {
     return { sent: false, error: error.message, to: normalizePhone(to) };
   }
@@ -132,10 +154,19 @@ async function sendBulk({ recipients, message, from, templateValues = {} }) {
   for (const recipient of recipients) {
     const to = recipient && recipient.phone ? recipient.phone : recipient;
     const personalizedMessage = recipient && typeof recipient === 'object'
-      ? fillTemplate(message, { name: recipient.name || '', ...templateValues })
+      ? fillTemplate(message, {
+        ...templateValues,
+        name: recipient.name || '',
+        campus: recipient.campus || templateValues.campus || ''
+      })
       : message;
     const result = await sendSingle({ to, message: personalizedMessage, from });
-    results.push({ ...result, name: recipient?.name || null });
+    results.push({
+      ...result,
+      name: recipient?.name || null,
+      recipientId: recipient?.id || null,
+      campus: recipient?.campus || null
+    });
   }
   const sent = results.filter((r) => r.sent).length;
   const failed = results.filter((r) => !r.sent && !r.skipped).length;

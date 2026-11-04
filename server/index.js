@@ -43,9 +43,16 @@ import {
   listFeedback,
   getCampusStats,
   insertSmsLogs,
-  listSmsLogs
+  listSmsLogs,
+  listRetentionSmsHistory,
+  updateSmsDeliveryStatus,
+  insertRetentionSchedule,
+  listRetentionSchedules,
+  claimDueRetentionSchedules,
+  updateRetentionSchedule,
+  cancelRetentionSchedule
 } from './db.js';
-import { sendSingle, sendBulk, health as smsHealth, getConfig as getSmsConfig, fillTemplate } from './sms.js';
+import { sendSingle, sendBulk, health as smsHealth, getConfig as getSmsConfig, fillTemplate, normalizePhone } from './sms.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -72,6 +79,12 @@ const ALLOW_UNAUTHENTICATED = process.env.ALLOW_UNAUTHENTICATED === 'true';
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const SERVER_STARTED_AT = Date.now();
 const ACCESS_TOKEN_PATTERN = /^\d{4}$/;
+const DEFAULT_RETENTION_SMS_SETTINGS = {
+  firstTimeFollowUp: 'Hi {name}, we hope you enjoyed your visit to {campus}! Our facility is open and we would love to see you again soon.',
+  atRiskWinback: "Hello {name}, we noticed it's been a few weeks since your last visit to {campus}. We miss having you! Drop by anytime.",
+  cooldownDays: 7
+};
+const MAX_SMS_MESSAGE_LENGTH = 500;
 
 function parseTokenMap(rawValue) {
   if (!rawValue) return {};
@@ -389,14 +402,115 @@ function maskPhone(phone) {
 function createSmsLog(result, recipient, campus, source, provider, createdAt) {
   return {
     id: uuidv4(),
-    campus,
+    campus: recipient?.campus || campus,
     recipient_name: recipient?.name || null,
     recipient_phone_masked: maskPhone(recipient?.phone || result.to),
+    recipient_id: recipient?.id || result.recipientId || null,
     provider: result.provider || provider || null,
+    provider_message_id: result.providerMessageId || null,
     status: result.sent ? 'accepted' : result.skipped ? 'skipped' : 'failed',
+    delivery_status: result.sent && result.providerMessageId ? 'pending' : null,
     source,
     error: result.error || result.reason || null,
     created_at: createdAt
+  };
+}
+
+function retentionSettingsKey(campus) {
+  const key = String(campus || 'ALL CAMPUSES').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  return `retention_sms_settings_${key}`;
+}
+
+function getRetentionSmsSettings(campus) {
+  const stored = getSettingSync(retentionSettingsKey(campus))
+    || (campus ? getSettingSync(retentionSettingsKey(null)) : null);
+  let parsed = {};
+  if (stored) {
+    try {
+      parsed = JSON.parse(stored);
+    } catch (error) {
+      console.error('Invalid retention SMS settings; defaults will be used:', error);
+    }
+  }
+  const cooldownDays = Number(parsed.cooldownDays);
+  return {
+    firstTimeFollowUp: typeof parsed.firstTimeFollowUp === 'string'
+      ? parsed.firstTimeFollowUp
+      : DEFAULT_RETENTION_SMS_SETTINGS.firstTimeFollowUp,
+    atRiskWinback: typeof parsed.atRiskWinback === 'string'
+      ? parsed.atRiskWinback
+      : DEFAULT_RETENTION_SMS_SETTINGS.atRiskWinback,
+    cooldownDays: Number.isInteger(cooldownDays) && cooldownDays >= 1 && cooldownDays <= 90
+      ? cooldownDays
+      : DEFAULT_RETENTION_SMS_SETTINGS.cooldownDays
+  };
+}
+
+function validateRetentionSmsSettings(value) {
+  const { firstTimeFollowUp, atRiskWinback, cooldownDays } = value || {};
+  for (const [label, message] of [['firstTimeFollowUp', firstTimeFollowUp], ['atRiskWinback', atRiskWinback]]) {
+    if (typeof message !== 'string' || !message.trim() || message.length > MAX_SMS_MESSAGE_LENGTH) {
+      return { error: `${label} must be a non-empty message no longer than ${MAX_SMS_MESSAGE_LENGTH} characters.` };
+    }
+  }
+  if (!Number.isInteger(cooldownDays) || cooldownDays < 1 || cooldownDays > 90) {
+    return { error: 'Cooldown must be a whole number between 1 and 90 days.' };
+  }
+  return { settings: { firstTimeFollowUp: firstTimeFollowUp.trim(), atRiskWinback: atRiskWinback.trim(), cooldownDays } };
+}
+
+async function getAutoCampaignCandidates(campus, settings, now = Date.now()) {
+  const retention = await getRetention(campus);
+  const cutoff = new Date(now - settings.cooldownDays * 24 * 60 * 60 * 1000).toISOString();
+  const recentAttempts = await listRetentionSmsHistory(campus, cutoff);
+  const recentlyContacted = new Map();
+  for (const attempt of recentAttempts) {
+    if (attempt.status !== 'accepted' || !attempt.recipient_id) continue;
+    const sentAt = Date.parse(attempt.created_at);
+    if (!Number.isNaN(sentAt) && sentAt >= now - settings.cooldownDays * 24 * 60 * 60 * 1000) {
+      recentlyContacted.set(attempt.recipient_id, attempt.created_at);
+    }
+  }
+
+  const records = retention.records || [];
+  const firstTimeFollowUps = records.filter((record) =>
+    record.visit_count === 1 &&
+    record.days_since_last >= 3 &&
+    record.days_since_last <= 7 &&
+    record.phone
+  );
+  const atRiskReengagements = records.filter((record) =>
+    record.visit_count >= 2 &&
+    record.days_since_last >= 25 &&
+    record.days_since_last <= 35 &&
+    record.phone
+  );
+  const candidates = [
+    ...firstTimeFollowUps.map((record) => ({ record, source: 'first-time-followup', template: settings.firstTimeFollowUp })),
+    ...atRiskReengagements.map((record) => ({ record, source: 'at-risk-winback', template: settings.atRiskWinback }))
+  ];
+  const eligible = candidates.filter(({ record }) => !record.sms_opt_out && !recentlyContacted.has(record.id));
+  const scheduled = eligible.map(({ record, source, template }) => ({
+    id: record.id,
+    name: record.name,
+    phone: record.phone,
+    campus: record.campus || campus || 'our campus',
+    status: record.status,
+    visit_count: record.visit_count,
+    last_visit: record.last_visit,
+    days_since_last: record.days_since_last,
+    source,
+    message: fillTemplate(template, { name: record.name, campus: record.campus || campus || 'our campus' })
+  }));
+  return {
+    eligible: scheduled,
+    counts: {
+      firstTimeFollowUpsCount: scheduled.filter((row) => row.source === 'first-time-followup').length,
+      atRiskReengagementsCount: scheduled.filter((row) => row.source === 'at-risk-winback').length,
+      totalEligible: scheduled.length,
+      excludedOptOut: candidates.filter(({ record }) => record.sms_opt_out).length,
+      excludedCooldown: candidates.filter(({ record }) => !record.sms_opt_out && recentlyContacted.has(record.id)).length
+    }
   };
 }
 
@@ -975,99 +1089,258 @@ app.get('/api/admin/retention', requireAdminAuth, async (req, res) => {
   }
 });
 
-app.post('/api/admin/retention/auto-campaign', requireAdminAuth, async (req, res) => {
+app.get('/api/admin/retention/settings', requireAdminAuth, (req, res) => {
+  const campus = getAdminTargetCampus(req);
+  res.json({ settings: getRetentionSmsSettings(campus), campus: campus || 'ALL CAMPUSES' });
+});
+
+app.put('/api/admin/retention/settings', requireAdminAuth, async (req, res) => {
+  const campus = getAdminTargetCampus(req);
+  const validated = validateRetentionSmsSettings(req.body);
+  if (validated.error) return res.status(400).json({ error: validated.error });
   try {
-    const campus = getAdminTargetCampus(req, req.body?.campus);
-    const retentionData = await getRetention(campus);
-    const records = retentionData.records || [];
+    await setSetting(retentionSettingsKey(campus), JSON.stringify(validated.settings));
+    res.json({ success: true, settings: validated.settings, campus: campus || 'ALL CAMPUSES' });
+  } catch (error) {
+    console.error('Retention settings save error:', error);
+    res.status(500).json({ error: 'Failed to save retention SMS settings' });
+  }
+});
 
-    // Cohort 1: First-time visitors who visited 3-7 days ago and haven't returned
-    const firstTimeFollowUps = records.filter(r =>
-      r.visit_count === 1 &&
-      r.days_since_last >= 3 &&
-      r.days_since_last <= 7 &&
-      r.phone
-    );
+app.get('/api/admin/retention/auto-campaign/preview', requireAdminAuth, async (req, res) => {
+  try {
+    const campus = getAdminTargetCampus(req);
+    const settings = getRetentionSmsSettings(campus);
+    const preview = await getAutoCampaignCandidates(campus, settings);
+    res.json({
+      success: true,
+      campus: campus || 'ALL CAMPUSES',
+      cooldownDays: settings.cooldownDays,
+      cohorts: preview.counts,
+      settings,
+      recipients: preview.eligible.map((recipient) => ({
+        id: recipient.id,
+        name: recipient.name,
+        phone: maskPhone(recipient.phone),
+        status: recipient.status,
+        visit_count: recipient.visit_count,
+        last_visit: recipient.last_visit,
+        days_since_last: recipient.days_since_last,
+        source: recipient.source,
+        message: recipient.message
+      }))
+    });
+  } catch (error) {
+    console.error('Retention campaign preview error:', error);
+    res.status(500).json({ error: 'Failed to preview retention campaign' });
+  }
+});
 
-    // Cohort 2: At-risk visitors who haven't visited in 25-35 days
-    const atRiskReengagements = records.filter(r =>
-      r.visit_count >= 2 &&
-      r.days_since_last >= 25 &&
-      r.days_since_last <= 35 &&
-      r.phone
-    );
-
+let retentionDispatchInProgress = false;
+async function dispatchRetentionCampaign(campus, settings, campaignId = null, recipientIds = null) {
+  if (retentionDispatchInProgress) {
+    const error = new Error('Another retention campaign is currently being sent. Try again shortly.');
+    error.statusCode = 409;
+    throw error;
+  }
+  retentionDispatchInProgress = true;
+  try {
+    const preview = await getAutoCampaignCandidates(campus, settings);
+    const selectedIds = recipientIds == null ? null : new Set(recipientIds);
+    const eligible = selectedIds
+      ? preview.eligible.filter((recipient) => selectedIds.has(recipient.id))
+      : preview.eligible;
+    const counts = {
+      ...preview.counts,
+      firstTimeFollowUpsCount: eligible.filter((row) => row.source === 'first-time-followup').length,
+      atRiskReengagementsCount: eligible.filter((row) => row.source === 'at-risk-winback').length,
+      totalEligible: eligible.length,
+      excludedSincePreview: selectedIds ? Math.max(0, selectedIds.size - eligible.length) : 0
+    };
     const cfg = getSmsConfig();
     const isReady = cfg.enabled && cfg.apiKey;
+    const createdAt = new Date().toISOString();
+    let sendResult = { sent: 0, failed: 0, skipped: eligible.length, reason: 'SMS not enabled' };
 
-    const messagesToSend = [];
-    firstTimeFollowUps.forEach(r => {
-      messagesToSend.push({
-        to: r.phone,
-        message: fillTemplate(
-          "Hi {name}, we hope you enjoyed your visit to {campus}! Our facility is open and we would love to see you again soon.",
-          { name: r.name, campus: r.campus || campus || 'our campus' }
-        ),
-        type: 'first-time-followup'
-      });
-    });
-
-    atRiskReengagements.forEach(r => {
-      messagesToSend.push({
-        to: r.phone,
-        message: fillTemplate(
-          "Hello {name}, we noticed it's been a few weeks since your last visit to {campus}. We miss having you! Drop by anytime.",
-          { name: r.name, campus: r.campus || campus || 'our campus' }
-        ),
-        type: 'at-risk-winback'
-      });
-    });
-
-    let sendResult = { sent: 0, failed: 0, skipped: messagesToSend.length, reason: 'SMS not enabled' };
-    if (isReady && messagesToSend.length > 0) {
+    if (isReady && eligible.length > 0) {
       const results = [];
-      for (const item of messagesToSend) {
-        const result = await sendSingle({ to: item.to, message: item.message });
-        results.push({ ...result, name: item.name, type: item.type });
+      for (const recipient of eligible) {
+        const result = await sendSingle({ to: recipient.phone, message: recipient.message });
+        results.push({
+          ...result,
+          name: recipient.name,
+          recipientId: recipient.id,
+          campus: recipient.campus,
+          type: recipient.source
+        });
       }
-      const sent = results.filter(r => r.sent).length;
-      const failed = results.filter(r => !r.sent).length;
-      sendResult = { sent, failed, skipped: 0, provider: cfg.provider };
+      sendResult = {
+        sent: results.filter((result) => result.sent).length,
+        failed: results.filter((result) => !result.sent).length,
+        skipped: 0,
+        provider: cfg.provider
+      };
       const historyWarning = await persistSmsLogs(results.map((result) => createSmsLog(
         result,
-        { name: result.name, phone: result.to },
-        campus || DEFAULT_CAMPUS,
+        { id: result.recipientId, name: result.name, phone: result.to, campus: result.campus },
+        result.campus || campus || DEFAULT_CAMPUS,
         result.type,
         cfg.provider,
-        new Date().toISOString()
+        createdAt
       )));
       if (historyWarning) sendResult.historyWarning = historyWarning;
-    } else if (messagesToSend.length > 0) {
-      const historyWarning = await persistSmsLogs(messagesToSend.map((item) => createSmsLog(
-        { sent: false, skipped: true, reason: 'SMS not configured', to: item.to },
-        { name: item.name, phone: item.to },
-        campus || DEFAULT_CAMPUS,
-        item.type,
+    } else if (eligible.length > 0) {
+      const historyWarning = await persistSmsLogs(eligible.map((recipient) => createSmsLog(
+        { sent: false, skipped: true, reason: 'SMS not configured', to: recipient.phone, recipientId: recipient.id },
+        { id: recipient.id, name: recipient.name, phone: recipient.phone, campus: recipient.campus },
+        recipient.campus || campus || DEFAULT_CAMPUS,
+        recipient.source,
         cfg.provider,
-        new Date().toISOString()
+        createdAt
       )));
       if (historyWarning) sendResult.historyWarning = historyWarning;
     }
 
-    res.json({
+    return {
       success: true,
-      cohorts: {
-        firstTimeFollowUpsCount: firstTimeFollowUps.length,
-        atRiskReengagementsCount: atRiskReengagements.length,
-        totalEligible: messagesToSend.length
-      },
+      campaignId,
+      cohorts: counts,
       sms: sendResult
-    });
+    };
+  } finally {
+    retentionDispatchInProgress = false;
+  }
+}
+
+app.post('/api/admin/retention/auto-campaign', requireAdminAuth, async (req, res) => {
+  if (req.body?.confirm !== true) {
+    return res.status(400).json({ error: 'Preview recipients and explicitly confirm before sending.' });
+  }
+  if (!Array.isArray(req.body?.recipient_ids) || req.body.recipient_ids.some((id) => typeof id !== 'string')) {
+    return res.status(400).json({ error: 'A previewed recipient_ids array is required.' });
+  }
+  const validatedSettings = validateRetentionSmsSettings(req.body?.settings);
+  if (validatedSettings.error) return res.status(400).json({ error: validatedSettings.error });
+  try {
+    const campus = getAdminTargetCampus(req, req.body?.campus);
+    const result = await dispatchRetentionCampaign(campus, validatedSettings.settings, null, req.body.recipient_ids);
+    res.json(result);
   } catch (error) {
     console.error('Auto-campaign error:', error);
-    res.status(500).json({ error: 'Failed to run retention campaign' });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'Failed to run retention campaign' });
   }
 });
+
+app.get('/api/admin/retention/schedules', requireAdminAuth, async (req, res) => {
+  try {
+    const campus = getAdminTargetCampus(req);
+    const schedules = await listRetentionSchedules(campus, 50);
+    res.json({ schedules, campus: campus || 'ALL CAMPUSES' });
+  } catch (error) {
+    console.error('Retention schedules fetch error:', error);
+    res.status(500).json({ error: 'Failed to load scheduled campaigns' });
+  }
+});
+
+app.post('/api/admin/retention/schedules', requireAdminAuth, async (req, res) => {
+  const parsedRunAt = typeof req.body?.run_at === 'string' ? Date.parse(req.body.run_at) : NaN;
+  if (!Number.isFinite(parsedRunAt) || parsedRunAt <= Date.now()) {
+    return res.status(400).json({ error: 'Choose a future schedule time.' });
+  }
+  if (!Array.isArray(req.body?.recipient_ids) || !req.body.recipient_ids.length ||
+    req.body.recipient_ids.length > 5000 || req.body.recipient_ids.some((id) => typeof id !== 'string')) {
+    return res.status(400).json({ error: 'Select at least one previewed member to schedule.' });
+  }
+  const validatedSettings = validateRetentionSmsSettings(req.body?.settings);
+  if (validatedSettings.error) return res.status(400).json({ error: validatedSettings.error });
+  try {
+    const targetCampus = getAdminTargetCampus(req);
+    const campus = targetCampus || 'ALL CAMPUSES';
+    const settings = validatedSettings.settings;
+    const preview = await getAutoCampaignCandidates(targetCampus, settings);
+    const eligibleIds = new Set(preview.eligible.map((recipient) => recipient.id));
+    const recipientIds = [...new Set(req.body.recipient_ids)];
+    if (recipientIds.some((id) => !eligibleIds.has(id))) {
+      return res.status(409).json({ error: 'Campaign eligibility changed. Refresh the preview before scheduling.' });
+    }
+    const schedule = {
+      id: uuidv4(),
+      campus,
+      run_at: new Date(parsedRunAt).toISOString(),
+      status: 'scheduled',
+      templates: {
+        firstTimeFollowUp: settings.firstTimeFollowUp,
+        atRiskWinback: settings.atRiskWinback
+      },
+      recipient_ids: recipientIds,
+      cooldown_days: settings.cooldownDays,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    await insertRetentionSchedule(schedule);
+    res.status(201).json({ success: true, schedule });
+  } catch (error) {
+    console.error('Retention schedule create error:', error);
+    res.status(500).json({ error: 'Failed to schedule retention campaign' });
+  }
+});
+
+app.delete('/api/admin/retention/schedules/:id', requireAdminAuth, async (req, res) => {
+  try {
+    const campus = getAdminTargetCampus(req);
+    const cancelled = await cancelRetentionSchedule(req.params.id, campus);
+    if (!cancelled) return res.status(404).json({ error: 'Scheduled campaign not found or already started.' });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Retention schedule cancellation error:', error);
+    res.status(500).json({ error: 'Failed to cancel scheduled campaign' });
+  }
+});
+
+async function processDueRetentionSchedules() {
+  if (retentionDispatchInProgress) return;
+  const now = new Date().toISOString();
+  const schedules = await claimDueRetentionSchedules(now, 10);
+  for (const schedule of schedules) {
+    try {
+      const campus = schedule.campus === 'ALL CAMPUSES' ? null : schedule.campus;
+      const result = await dispatchRetentionCampaign(campus, {
+        ...DEFAULT_RETENTION_SMS_SETTINGS,
+        ...schedule.templates,
+        cooldownDays: schedule.cooldown_days
+      }, schedule.id, schedule.recipient_ids);
+      await updateRetentionSchedule(schedule.id, 'completed', result);
+    } catch (error) {
+      console.error(`Scheduled retention campaign ${schedule.id} failed:`, error);
+      if (error.statusCode === 409) {
+        await updateRetentionSchedule(schedule.id, 'scheduled');
+      } else {
+        await updateRetentionSchedule(schedule.id, 'failed', { error: 'Campaign execution failed' });
+      }
+    }
+  }
+}
+
+let scheduledCampaignPoller;
+let schedulePollInProgress = false;
+async function pollScheduledRetentionCampaigns() {
+  if (schedulePollInProgress) return;
+  schedulePollInProgress = true;
+  try {
+    await processDueRetentionSchedules();
+  } catch (error) {
+    console.error('Scheduled retention campaign polling failed:', error);
+  } finally {
+    schedulePollInProgress = false;
+  }
+}
+
+function startRetentionSchedulePoller() {
+  if (scheduledCampaignPoller) return;
+  scheduledCampaignPoller = setInterval(pollScheduledRetentionCampaigns, 30_000);
+  scheduledCampaignPoller.unref();
+  pollScheduledRetentionCampaigns();
+}
 
 app.post('/api/feedback', async (req, res) => {
   try {
@@ -1131,6 +1404,10 @@ app.get('/api/sms/status', requireAdminAuth, async (_req, res) => {
 });
 
 app.post('/api/sms/send', requireAdminAuth, async (req, res) => {
+  if (retentionDispatchInProgress) {
+    return res.status(409).json({ error: 'Another SMS campaign is currently being sent. Try again shortly.' });
+  }
+  retentionDispatchInProgress = true;
   try {
     const cfg = getSmsConfig();
     if (!cfg.enabled || !cfg.apiKey) {
@@ -1143,9 +1420,32 @@ app.post('/api/sms/send', requireAdminAuth, async (req, res) => {
     if (!message || typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({ error: 'message is required' });
     }
+    if (message.length > MAX_SMS_MESSAGE_LENGTH) {
+      return res.status(400).json({ error: `message must not exceed ${MAX_SMS_MESSAGE_LENGTH} characters.` });
+    }
     const targetCampus = getAdminTargetCampus(req);
+    const records = (await getRetention(targetCampus)).records || [];
+    const byId = new Map(records.map((record) => [record.id, record]));
+    const byPhone = new Map(records.map((record) => [normalizePhone(record.phone), record]));
+    let optOutSkipped = 0;
+    const resolvedRecipients = recipients.flatMap((recipient) => {
+      const record = recipient?.id
+        ? byId.get(recipient.id)
+        : byPhone.get(normalizePhone(typeof recipient === 'string' ? recipient : recipient?.phone));
+      if (!record) return [];
+      if (record.sms_opt_out) {
+        optOutSkipped += 1;
+        return [];
+      }
+      return [{ id: record.id, phone: record.phone, name: record.name, campus: record.campus }];
+    });
+    if (resolvedRecipients.length === 0) {
+      return res.status(400).json({
+        error: optOutSkipped ? 'All selected members have opted out of SMS.' : 'No selected members were found in this campus.'
+      });
+    }
     const result = await sendBulk({
-      recipients,
+      recipients: resolvedRecipients,
       message,
       from: from || cfg.senderId,
       templateValues: { campus: targetCampus || DEFAULT_CAMPUS }
@@ -1153,16 +1453,56 @@ app.post('/api/sms/send', requireAdminAuth, async (req, res) => {
     const createdAt = new Date().toISOString();
     const historyWarning = await persistSmsLogs(result.results.map((smsResult) => createSmsLog(
       smsResult,
-      { name: smsResult.name, phone: smsResult.to },
-      targetCampus || DEFAULT_CAMPUS,
+      { id: smsResult.recipientId, name: smsResult.name, phone: smsResult.to, campus: smsResult.campus },
+      smsResult.campus || targetCampus || DEFAULT_CAMPUS,
       'manual-broadcast',
       result.provider,
       createdAt
     )));
-    res.json({ ok: true, sms: result, historyWarning });
+    res.json({
+      ok: true,
+      sms: { ...result, skipped: result.skipped + optOutSkipped, optOutSkipped },
+      historyWarning
+    });
   } catch (error) {
     console.error('SMS send error:', error);
     res.status(500).json({ error: 'Failed to send SMS' });
+  } finally {
+    retentionDispatchInProgress = false;
+  }
+});
+
+app.post('/api/sms/delivery', async (req, res) => {
+  const expectedToken = process.env.SMS_DELIVERY_WEBHOOK_TOKEN || '';
+  const suppliedToken = req.get('x-sms-webhook-token')
+    || req.get('authorization')?.replace(/^Bearer\s+/i, '')
+    || '';
+  const expected = Buffer.from(expectedToken);
+  const supplied = Buffer.from(suppliedToken);
+  if (!expected.length || expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
+    return res.status(401).json({ error: 'Invalid SMS delivery webhook credentials' });
+  }
+  const providerMessageId = req.body?.provider_message_id || req.body?.message_id || req.body?.messageId;
+  const rawStatus = String(req.body?.delivery_status || req.body?.status || '').toLowerCase();
+  const statusMap = {
+    delivered: 'delivered',
+    success: 'delivered',
+    failed: 'failed',
+    undelivered: 'undelivered',
+    expired: 'expired',
+    rejected: 'rejected'
+  };
+  const deliveryStatus = statusMap[rawStatus];
+  if (typeof providerMessageId !== 'string' || !providerMessageId.trim() || !deliveryStatus) {
+    return res.status(400).json({ error: 'A provider message ID and supported delivery status are required.' });
+  }
+  try {
+    const updated = await updateSmsDeliveryStatus(providerMessageId.trim(), deliveryStatus);
+    if (!updated) return res.status(404).json({ error: 'SMS message ID was not found.' });
+    res.json({ success: true, updated });
+  } catch (error) {
+    console.error('SMS delivery callback update failed:', error);
+    res.status(500).json({ error: 'Failed to update SMS delivery status' });
   }
 });
 
@@ -1177,6 +1517,46 @@ app.get('/api/admin/sms/logs', requireAdminAuth, async (req, res) => {
   }
 });
 
+app.get('/api/admin/retention/analytics', requireAdminAuth, async (req, res) => {
+  try {
+    const campus = getAdminTargetCampus(req);
+    const [logs, retention] = await Promise.all([
+      listSmsLogs(campus, 1000),
+      getRetention(campus)
+    ]);
+    const campaignLogs = logs.filter((log) => ['first-time-followup', 'at-risk-winback'].includes(log.source));
+    const recordById = new Map((retention.records || []).map((record) => [record.id, record]));
+    const recentLogs = campaignLogs.filter((log) => Date.parse(log.created_at) >= Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const grouped = {};
+    for (const log of recentLogs) {
+      const cohort = grouped[log.source] || (grouped[log.source] = {
+        source: log.source,
+        accepted: 0,
+        failed: 0,
+        delivered: 0,
+        deliveryFailed: 0,
+        returnedAfterSend: 0
+      });
+      if (log.status === 'accepted') cohort.accepted += 1;
+      if (log.status === 'failed') cohort.failed += 1;
+      if (log.delivery_status === 'delivered') cohort.delivered += 1;
+      if (['failed', 'undelivered', 'expired', 'rejected'].includes(log.delivery_status)) cohort.deliveryFailed += 1;
+      const record = log.status === 'accepted' && log.recipient_id && recordById.get(log.recipient_id);
+      if (record?.last_visit && Date.parse(record.last_visit) > Date.parse(log.created_at)) cohort.returnedAfterSend += 1;
+    }
+    const totals = Object.values(grouped).reduce((sum, cohort) => ({
+      accepted: sum.accepted + cohort.accepted,
+      failed: sum.failed + cohort.failed,
+      delivered: sum.delivered + cohort.delivered,
+      deliveryFailed: sum.deliveryFailed + cohort.deliveryFailed,
+      returnedAfterSend: sum.returnedAfterSend + cohort.returnedAfterSend
+    }), { accepted: 0, failed: 0, delivered: 0, deliveryFailed: 0, returnedAfterSend: 0 });
+    res.json({ days: 90, totals, cohorts: Object.values(grouped) });
+  } catch (error) {
+    console.error('Retention campaign analytics error:', error);
+    res.status(500).json({ error: 'Failed to load retention campaign analytics' });
+  }
+});
 app.get('/api/admin/analytics', requireAdminAuth, async (req, res) => {
   try {
     const { range = 'day', campus } = req.query;
@@ -1276,6 +1656,31 @@ app.post('/api/admin/students/:id/flag', requireAdminAuth, async (req, res) => {
   } catch (error) {
     console.error('Flag student error:', error);
     res.status(500).json({ error: 'Failed to update flag' });
+  }
+});
+
+app.post('/api/admin/students/:id/sms-preference', requireAdminAuth, async (req, res) => {
+  const { opted_out } = req.body || {};
+  if (typeof opted_out !== 'boolean') {
+    return res.status(400).json({ error: 'opted_out must be a boolean.' });
+  }
+  try {
+    const student = await findStudentById(req.params.id);
+    if (!student) return res.status(404).json({ error: 'Student not found.' });
+    const targetCampus = getAdminTargetCampus(req);
+    if (targetCampus && student.campus !== targetCampus) {
+      return res.status(404).json({ error: 'Student not found in this campus.' });
+    }
+    await updateStudent(student.id, {
+      name: student.name,
+      phone: student.phone,
+      purpose: student.purpose,
+      sms_opt_out: opted_out
+    });
+    res.json({ success: true, studentId: student.id, sms_opt_out: opted_out });
+  } catch (error) {
+    console.error('SMS preference update error:', error);
+    res.status(500).json({ error: 'Failed to update SMS preference' });
   }
 });
 
@@ -1437,6 +1842,7 @@ function startServer(port, host = '0.0.0.0', attemptsLeft = 10) {
 
 async function main() {
   await init();
+  startRetentionSchedulePoller();
   startServer(PORT);
 }
 

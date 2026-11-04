@@ -17,6 +17,7 @@ create table if not exists public.students (
   created_at text not null,
   flagged    integer not null default 0,
   flag_note  text,
+  sms_opt_out integer not null default 0,
   unique (phone, campus)
 );
 
@@ -56,11 +57,27 @@ create table if not exists public.sms_logs (
   campus                 text not null,
   recipient_name         text,
   recipient_phone_masked text not null,
+  recipient_id           text,
   provider               text,
+  provider_message_id     text,
   status                 text not null,
+  delivery_status        text,
   source                 text not null,
   error                  text,
   created_at             text not null
+);
+
+create table if not exists public.retention_schedules (
+  id            text primary key,
+  campus        text not null,
+  run_at        text not null,
+  status        text not null,
+  templates     text not null,
+  recipient_ids text not null,
+  cooldown_days integer not null,
+  created_at    text not null,
+  updated_at    text not null,
+  result        text
 );
 
 create index if not exists idx_students_campus on public.students (campus);
@@ -70,9 +87,12 @@ create index if not exists idx_access_tokens_token on public.access_tokens (toke
 create index if not exists idx_sessions_expires on public.sessions (expires_at);
 create index if not exists idx_feedback_campus on public.feedback (campus);
 create index if not exists idx_sms_logs_campus_created on public.sms_logs (campus, created_at);
+create index if not exists idx_sms_logs_recipient_created on public.sms_logs (recipient_id, created_at);
+create index if not exists idx_sms_logs_provider_message_id on public.sms_logs (provider_message_id);
+create index if not exists idx_retention_schedules_status_run_at on public.retention_schedules (status, run_at);
 
--- RLS is intentionally left disabled. All traffic is routed through the
--- Express API layer, which uses the service_role key (bypasses RLS) and
--- authenticates every request with session tokens or campus passwords.
--- If you want belt-and-suspenders protection, enable RLS and add policies
--- for the service_role role in the Supabase dashboard.
+alter table public.sms_logs enable row level security;
+alter table public.retention_schedules enable row level security;
+
+-- The Express API uses the Supabase service_role key and authenticates admin
+-- requests itself. No direct anon/authenticated client access is needed.

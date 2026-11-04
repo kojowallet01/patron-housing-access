@@ -54,7 +54,8 @@ function createSqliteTables() {
     phone TEXT NOT NULL,
     purpose TEXT NOT NULL,
     campus TEXT NOT NULL DEFAULT 'TESANO CAMPUS',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    sms_opt_out INTEGER NOT NULL DEFAULT 0
   )`).run();
 
   sqlite.prepare(`CREATE TABLE IF NOT EXISTS access_tokens (
@@ -130,12 +131,43 @@ function createSqliteTables() {
     campus TEXT NOT NULL,
     recipient_name TEXT,
     recipient_phone_masked TEXT NOT NULL,
+    recipient_id TEXT,
     provider TEXT,
+    provider_message_id TEXT,
     status TEXT NOT NULL,
+    delivery_status TEXT,
     source TEXT NOT NULL,
     error TEXT,
     created_at TEXT NOT NULL
   )`).run();
+
+  sqlite.prepare(`CREATE TABLE IF NOT EXISTS retention_schedules (
+    id TEXT PRIMARY KEY,
+    campus TEXT NOT NULL,
+    run_at TEXT NOT NULL,
+    status TEXT NOT NULL,
+    templates TEXT NOT NULL,
+    recipient_ids TEXT NOT NULL,
+    cooldown_days INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    result TEXT
+  )`).run();
+
+  const studentColumns = sqlite.prepare('PRAGMA table_info(students)').all().map((column) => column.name);
+  if (!studentColumns.includes('sms_opt_out')) {
+    sqlite.prepare('ALTER TABLE students ADD COLUMN sms_opt_out INTEGER NOT NULL DEFAULT 0').run();
+  }
+  const smsLogColumns = sqlite.prepare('PRAGMA table_info(sms_logs)').all().map((column) => column.name);
+  if (!smsLogColumns.includes('recipient_id')) sqlite.prepare('ALTER TABLE sms_logs ADD COLUMN recipient_id TEXT').run();
+  if (!smsLogColumns.includes('provider_message_id')) sqlite.prepare('ALTER TABLE sms_logs ADD COLUMN provider_message_id TEXT').run();
+  if (!smsLogColumns.includes('delivery_status')) sqlite.prepare('ALTER TABLE sms_logs ADD COLUMN delivery_status TEXT').run();
+  const scheduleColumns = sqlite.prepare('PRAGMA table_info(retention_schedules)').all().map((column) => column.name);
+  if (!scheduleColumns.includes('recipient_ids')) {
+    sqlite.prepare("ALTER TABLE retention_schedules ADD COLUMN recipient_ids TEXT NOT NULL DEFAULT '[]'").run();
+  }
+  sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_sms_logs_recipient_created ON sms_logs (recipient_id, created_at)').run();
+  sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_retention_schedules_status_run_at ON retention_schedules (status, run_at)').run();
 
   try {
     sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_feedback_campus ON feedback (campus)').run();
@@ -385,7 +417,7 @@ export async function findStudentById(id) {
       console.error('Supabase student lookup failed:', error.message || error);
       return null;
     }
-    return data ? { ...data, flagged: Boolean(data.flagged) } : null;
+    return data ? { ...data, flagged: Boolean(data.flagged), sms_opt_out: Boolean(data.sms_opt_out) } : null;
   }
   return sqlite.prepare('SELECT * FROM students WHERE id = ?').get(id) || null;
 }
@@ -399,7 +431,8 @@ export async function insertStudent(student) {
     campus: student.campus,
     created_at: student.created_at,
     flagged: student.flagged ? 1 : 0,
-    flag_note: student.flag_note || null
+    flag_note: student.flag_note || null,
+    sms_opt_out: student.sms_opt_out ? 1 : 0
   };
 
   if (supabase) {
@@ -408,9 +441,9 @@ export async function insertStudent(student) {
     return student;
   }
 
-  sqlite.prepare(`INSERT INTO students (id, name, phone, purpose, campus, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)`)
-    .run(student.id, student.name, student.phone, student.purpose, student.campus, student.created_at);
+  sqlite.prepare(`INSERT INTO students (id, name, phone, purpose, campus, created_at, sms_opt_out)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(student.id, student.name, student.phone, student.purpose, student.campus, student.created_at, student.sms_opt_out ? 1 : 0);
   return student;
 }
 
@@ -423,7 +456,7 @@ export async function listStudents(campus) {
       console.error('Supabase students list failed:', error.message || error);
       return [];
     }
-    return (data || []).map(s => ({ ...s, flagged: Boolean(s.flagged) }));
+    return (data || []).map(s => ({ ...s, flagged: Boolean(s.flagged), sms_opt_out: Boolean(s.sms_opt_out) }));
   }
 
   const campusFilter = campus ? 'WHERE campus = ?' : '';
@@ -491,14 +524,19 @@ export async function updateStudent(id, updates) {
   if (supabase) {
     const { error } = await supabase
       .from('students')
-      .update({ name, phone, purpose })
+      .update({ name, phone, purpose, ...(updates.sms_opt_out !== undefined ? { sms_opt_out: updates.sms_opt_out ? 1 : 0 } : {}) })
       .eq('id', id);
     if (error) throw error;
     return;
   }
 
-  sqlite.prepare('UPDATE students SET name = ?, phone = ?, purpose = ? WHERE id = ?')
-    .run(name, phone, purpose, id);
+  if (updates.sms_opt_out !== undefined) {
+    sqlite.prepare('UPDATE students SET name = ?, phone = ?, purpose = ?, sms_opt_out = ? WHERE id = ?')
+      .run(name, phone, purpose, updates.sms_opt_out ? 1 : 0, id);
+  } else {
+    sqlite.prepare('UPDATE students SET name = ?, phone = ?, purpose = ? WHERE id = ?')
+      .run(name, phone, purpose, id);
+  }
 }
 
 export async function deleteStudent(id) {
@@ -585,8 +623,8 @@ export async function restoreAllData(data) {
     sqlite.prepare('DELETE FROM students').run();
     sqlite.prepare('DELETE FROM settings').run();
 
-    const insertStudentStmt = sqlite.prepare(`INSERT INTO students (id, name, phone, purpose, campus, created_at, flagged, flag_note)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    const insertStudentStmt = sqlite.prepare(`INSERT INTO students (id, name, phone, purpose, campus, created_at, flagged, flag_note, sms_opt_out)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     for (const s of students) {
       insertStudentStmt.run(
         s.id,
@@ -596,7 +634,8 @@ export async function restoreAllData(data) {
         s.campus || 'TESANO CAMPUS',
         s.created_at,
         s.flagged ? 1 : 0,
-        s.flag_note || null
+        s.flag_note || null,
+        s.sms_opt_out ? 1 : 0
       );
     }
 
@@ -776,7 +815,7 @@ export async function getRetention(campus) {
   let tokens;
 
   if (supabase) {
-    let sQuery = supabase.from('students').select('id,name,phone,purpose,campus,created_at');
+    let sQuery = supabase.from('students').select('id,name,phone,purpose,campus,created_at,sms_opt_out');
     let tQuery = supabase.from('access_tokens').select('student_id,verified_at,used_at,created_at');
     if (campus) {
       sQuery = sQuery.eq('campus', campus);
@@ -790,7 +829,7 @@ export async function getRetention(campus) {
   } else {
     const campusClause = campus ? 'WHERE campus = ?' : '';
     const sParams = campus ? [campus] : [];
-    students = sqlite.prepare(`SELECT id,name,phone,purpose,campus,created_at FROM students ${campusClause}`).all(...sParams);
+    students = sqlite.prepare(`SELECT id,name,phone,purpose,campus,created_at,sms_opt_out FROM students ${campusClause}`).all(...sParams);
     const where = campus ? 'WHERE verified_at IS NOT NULL AND campus = ?' : 'WHERE verified_at IS NOT NULL';
     const tParams = campus ? [campus] : [];
     tokens = sqlite.prepare(`SELECT student_id, verified_at, used_at FROM access_tokens ${where}`).all(...tParams);
@@ -827,6 +866,7 @@ export async function getRetention(campus) {
       phone: s.phone || '',
       purpose: s.purpose || '',
       campus: s.campus || '',
+      sms_opt_out: Boolean(s.sms_opt_out),
       created_at: s.created_at || null,
       visit_count: visitCount,
       first_visit: firstVisit,
@@ -1123,8 +1163,8 @@ export async function insertSmsLogs(logs) {
   }
 
   const insert = sqlite.prepare(`INSERT INTO sms_logs
-    (id, campus, recipient_name, recipient_phone_masked, provider, status, source, error, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    (id, campus, recipient_name, recipient_phone_masked, recipient_id, provider, provider_message_id, status, delivery_status, source, error, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const insertMany = sqlite.transaction((rows) => {
     for (const row of rows) {
       insert.run(
@@ -1132,8 +1172,11 @@ export async function insertSmsLogs(logs) {
         row.campus,
         row.recipient_name || null,
         row.recipient_phone_masked,
+        row.recipient_id || null,
         row.provider || null,
+        row.provider_message_id || null,
         row.status,
+        row.delivery_status || null,
         row.source,
         row.error || null,
         row.created_at
@@ -1155,6 +1198,144 @@ export async function listSmsLogs(campus, limit = 100) {
   const where = campus ? 'WHERE campus = ?' : '';
   const params = campus ? [campus, limit] : [limit];
   return sqlite.prepare(`SELECT * FROM sms_logs ${where} ORDER BY created_at DESC LIMIT ?`).all(...params);
+}
+
+export async function listRetentionSmsHistory(campus, since) {
+  if (supabase) {
+    let query = supabase
+      .from('sms_logs')
+      .select('recipient_id,status,source,created_at')
+      .gte('created_at', since)
+      .in('source', ['first-time-followup', 'at-risk-winback', 'manual-broadcast'])
+      .not('recipient_id', 'is', null);
+    if (campus) query = query.eq('campus', campus);
+    const { data, error } = await query;
+    if (error) throw new Error(`Supabase retention SMS history failed: ${error.message}`);
+    return data || [];
+  }
+  const whereCampus = campus ? 'AND campus = ?' : '';
+  const params = campus ? [since, campus] : [since];
+  return sqlite.prepare(`SELECT recipient_id,status,source,created_at FROM sms_logs
+    WHERE created_at >= ?
+      AND source IN ('first-time-followup', 'at-risk-winback', 'manual-broadcast')
+      AND recipient_id IS NOT NULL ${whereCampus}`).all(...params);
+}
+
+export async function updateSmsDeliveryStatus(providerMessageId, deliveryStatus) {
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('sms_logs')
+      .update({ delivery_status: deliveryStatus })
+      .eq('provider_message_id', providerMessageId)
+      .select('id');
+    if (error) throw new Error(`Supabase SMS delivery update failed: ${error.message}`);
+    return data?.length || 0;
+  }
+  return sqlite.prepare('UPDATE sms_logs SET delivery_status = ? WHERE provider_message_id = ?')
+    .run(deliveryStatus, providerMessageId).changes;
+}
+
+function parseRetentionSchedule(row) {
+  return {
+    ...row,
+    templates: typeof row.templates === 'string' ? JSON.parse(row.templates) : row.templates,
+    recipient_ids: typeof row.recipient_ids === 'string' ? JSON.parse(row.recipient_ids) : row.recipient_ids,
+    result: typeof row.result === 'string' && row.result ? JSON.parse(row.result) : row.result
+  };
+}
+
+export async function insertRetentionSchedule(schedule) {
+  const row = {
+    ...schedule,
+    templates: JSON.stringify(schedule.templates),
+    recipient_ids: JSON.stringify(schedule.recipient_ids),
+    result: null
+  };
+  if (supabase) {
+    const { error } = await supabase.from('retention_schedules').insert(row);
+    if (error) throw new Error(`Supabase schedule insert failed: ${error.message}`);
+    return schedule;
+  }
+  sqlite.prepare(`INSERT INTO retention_schedules
+    (id,campus,run_at,status,templates,recipient_ids,cooldown_days,created_at,updated_at,result)
+    VALUES (@id,@campus,@run_at,@status,@templates,@recipient_ids,@cooldown_days,@created_at,@updated_at,@result)`).run(row);
+  return schedule;
+}
+
+export async function listRetentionSchedules(campus, limit = 50) {
+  if (supabase) {
+    let query = supabase.from('retention_schedules').select('*').order('run_at', { ascending: false }).limit(limit);
+    if (campus) query = query.eq('campus', campus);
+    const { data, error } = await query;
+    if (error) throw new Error(`Supabase retention schedules failed: ${error.message}`);
+    return (data || []).map(parseRetentionSchedule);
+  }
+  const where = campus ? 'WHERE campus = ?' : '';
+  const params = campus ? [campus, limit] : [limit];
+  return sqlite.prepare(`SELECT * FROM retention_schedules ${where} ORDER BY run_at DESC LIMIT ?`)
+    .all(...params).map(parseRetentionSchedule);
+}
+
+export async function claimDueRetentionSchedules(now, limit = 10) {
+  const staleBefore = new Date(Date.parse(now) - 5 * 60 * 1000).toISOString();
+  if (supabase) {
+    const { error: recoverError } = await supabase.from('retention_schedules')
+      .update({ status: 'scheduled', updated_at: now })
+      .eq('status', 'sending').lt('updated_at', staleBefore);
+    if (recoverError) throw new Error(`Supabase stale schedule recovery failed: ${recoverError.message}`);
+    const { data, error } = await supabase.from('retention_schedules')
+      .select('*').eq('status', 'scheduled').lte('run_at', now).order('run_at').limit(limit);
+    if (error) throw new Error(`Supabase due schedules query failed: ${error.message}`);
+    const claimed = [];
+    for (const schedule of data || []) {
+      const { data: row, error: claimError } = await supabase.from('retention_schedules')
+        .update({ status: 'sending', updated_at: now })
+        .eq('id', schedule.id).eq('status', 'scheduled').select('*').maybeSingle();
+      if (claimError) throw new Error(`Supabase schedule claim failed: ${claimError.message}`);
+      if (row) claimed.push(parseRetentionSchedule(row));
+    }
+    return claimed;
+  }
+  const claim = sqlite.transaction(() => {
+    sqlite.prepare(`UPDATE retention_schedules SET status = 'scheduled', updated_at = ?
+      WHERE status = 'sending' AND updated_at < ?`).run(now, staleBefore);
+    const due = sqlite.prepare(`SELECT * FROM retention_schedules
+      WHERE status = 'scheduled' AND run_at <= ? ORDER BY run_at LIMIT ?`).all(now, limit);
+    const update = sqlite.prepare(`UPDATE retention_schedules SET status = 'sending', updated_at = ?
+      WHERE id = ? AND status = 'scheduled'`);
+    return due.filter((schedule) => update.run(now, schedule.id).changes === 1).map(parseRetentionSchedule);
+  });
+  return claim();
+}
+
+export async function updateRetentionSchedule(id, status, result = null, updatedAt = new Date().toISOString()) {
+  const serializedResult = result == null ? null : JSON.stringify(result);
+  if (supabase) {
+    const { error } = await supabase.from('retention_schedules')
+      .update({ status, result: serializedResult, updated_at: updatedAt })
+      .eq('id', id);
+    if (error) throw new Error(`Supabase schedule update failed: ${error.message}`);
+    return;
+  }
+  sqlite.prepare('UPDATE retention_schedules SET status = ?, result = ?, updated_at = ? WHERE id = ?')
+    .run(status, serializedResult, updatedAt, id);
+}
+
+export async function cancelRetentionSchedule(id, campus) {
+  if (supabase) {
+    let query = supabase.from('retention_schedules')
+      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+      .eq('id', id).eq('status', 'scheduled');
+    if (campus) query = query.eq('campus', campus);
+    const { data, error } = await query.select('id').maybeSingle();
+    if (error) throw new Error(`Supabase schedule cancel failed: ${error.message}`);
+    return Boolean(data);
+  }
+  const whereCampus = campus ? ' AND campus = ?' : '';
+  const params = campus ? [new Date().toISOString(), id, campus] : [new Date().toISOString(), id];
+  const result = sqlite.prepare(`UPDATE retention_schedules SET status = 'cancelled', updated_at = ?
+    WHERE id = ? AND status = 'scheduled'${whereCampus}`).run(...params);
+  return result.changes === 1;
 }
 
 export function closeDatabase() {
