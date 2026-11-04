@@ -4761,6 +4761,28 @@ html[data-theme="dark"] .admin-login-back:hover {
   font-weight: 600;
 }
 
+.retention-sms-input {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1f2937;
+  font: inherit;
+}
+
+.retention-sms-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+html[data-theme="dark"] .retention-sms-input {
+  background: #0f172a;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
 .admin-toolbar-row {
   display: flex;
   align-items: center;
@@ -6723,4 +6745,3 @@ html[data-theme="dark"] .feedback-input {
   color: #10b981;
   font-weight: 600;
 }
-

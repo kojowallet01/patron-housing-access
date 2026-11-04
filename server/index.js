@@ -41,7 +41,9 @@ import {
   countVerifiedVisitsForStudent,
   insertFeedback,
   listFeedback,
-  getCampusStats
+  getCampusStats,
+  insertSmsLogs,
+  listSmsLogs
 } from './db.js';
 import { sendSingle, sendBulk, health as smsHealth, getConfig as getSmsConfig, fillTemplate } from './sms.js';
 
@@ -379,6 +381,35 @@ function validatePhone(phone) {
   return typeof phone === 'string' && /^[+\d][\d\s()-]{5,20}$/.test(phone.trim());
 }
 
+function maskPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  return digits ? `***${digits.slice(-4)}` : 'unknown';
+}
+
+function createSmsLog(result, recipient, campus, source, provider, createdAt) {
+  return {
+    id: uuidv4(),
+    campus,
+    recipient_name: recipient?.name || null,
+    recipient_phone_masked: maskPhone(recipient?.phone || result.to),
+    provider: result.provider || provider || null,
+    status: result.sent ? 'accepted' : result.skipped ? 'skipped' : 'failed',
+    source,
+    error: result.error || result.reason || null,
+    created_at: createdAt
+  };
+}
+
+async function persistSmsLogs(logs) {
+  try {
+    await insertSmsLogs(logs);
+    return null;
+  } catch (error) {
+    console.error('SMS history persistence failed:', error);
+    return 'SMS attempts completed, but the history could not be saved.';
+  }
+}
+
 async function requireAdminAuth(req, res, next) {
   try {
     const rawCampus = req.get('x-campus') || req.body?.campus || req.query?.campus || DEFAULT_CAMPUS;
@@ -512,7 +543,15 @@ async function sendWelcomeSms(student) {
     campus: campusName,
     phone: student.phone || ''
   });
-  await sendSingle({ to: student.phone, message });
+  const result = await sendSingle({ to: student.phone, message });
+  await insertSmsLogs([createSmsLog(
+    result,
+    student,
+    student.campus || DEFAULT_CAMPUS,
+    'registration-welcome',
+    cfg.provider,
+    new Date().toISOString()
+  )]);
 }
 
 app.get('/api', (req, res) => {
@@ -564,7 +603,9 @@ app.post('/api/register', async (req, res) => {
 
     await insertStudent(student);
 
-    sendWelcomeSms(student).catch(() => {});
+    sendWelcomeSms(student).catch((error) => {
+      console.error('Welcome SMS processing failed:', error);
+    });
 
     res.json({ success: true, message: 'Registration successful', studentId: student.id, campus: student.campus });
   } catch (error) {
@@ -987,11 +1028,30 @@ app.post('/api/admin/retention/auto-campaign', requireAdminAuth, async (req, res
       const results = [];
       for (const item of messagesToSend) {
         const result = await sendSingle({ to: item.to, message: item.message });
-        results.push(result);
+        results.push({ ...result, name: item.name, type: item.type });
       }
       const sent = results.filter(r => r.sent).length;
       const failed = results.filter(r => !r.sent).length;
       sendResult = { sent, failed, skipped: 0, provider: cfg.provider };
+      const historyWarning = await persistSmsLogs(results.map((result) => createSmsLog(
+        result,
+        { name: result.name, phone: result.to },
+        campus || DEFAULT_CAMPUS,
+        result.type,
+        cfg.provider,
+        new Date().toISOString()
+      )));
+      if (historyWarning) sendResult.historyWarning = historyWarning;
+    } else if (messagesToSend.length > 0) {
+      const historyWarning = await persistSmsLogs(messagesToSend.map((item) => createSmsLog(
+        { sent: false, skipped: true, reason: 'SMS not configured', to: item.to },
+        { name: item.name, phone: item.to },
+        campus || DEFAULT_CAMPUS,
+        item.type,
+        cfg.provider,
+        new Date().toISOString()
+      )));
+      if (historyWarning) sendResult.historyWarning = historyWarning;
     }
 
     res.json({
@@ -1083,11 +1143,37 @@ app.post('/api/sms/send', requireAdminAuth, async (req, res) => {
     if (!message || typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({ error: 'message is required' });
     }
-    const result = await sendBulk({ recipients, message, from: from || cfg.senderId });
-    res.json({ ok: true, sms: result });
+    const targetCampus = getAdminTargetCampus(req);
+    const result = await sendBulk({
+      recipients,
+      message,
+      from: from || cfg.senderId,
+      templateValues: { campus: targetCampus || DEFAULT_CAMPUS }
+    });
+    const createdAt = new Date().toISOString();
+    const historyWarning = await persistSmsLogs(result.results.map((smsResult) => createSmsLog(
+      smsResult,
+      { name: smsResult.name, phone: smsResult.to },
+      targetCampus || DEFAULT_CAMPUS,
+      'manual-broadcast',
+      result.provider,
+      createdAt
+    )));
+    res.json({ ok: true, sms: result, historyWarning });
   } catch (error) {
     console.error('SMS send error:', error);
     res.status(500).json({ error: 'Failed to send SMS' });
+  }
+});
+
+app.get('/api/admin/sms/logs', requireAdminAuth, async (req, res) => {
+  try {
+    const campus = getAdminTargetCampus(req);
+    const logs = await listSmsLogs(campus, 100);
+    res.json({ logs, campus: campus || 'ALL CAMPUSES' });
+  } catch (error) {
+    console.error('SMS history error:', error);
+    res.status(500).json({ error: 'Failed to load SMS history' });
   }
 });
 

@@ -103,6 +103,19 @@ The system uses SQLite database (`tesano-campus.db`) with three tables:
 - `access_tokens` - Daily access tokens
 - `campus_qr` - Campus entrance QR code
 
+## SMS
+
+Arkesel and Termii are supported. Configure `SMS_ENABLED=true`, `SMS_PROVIDER`,
+`SMS_API_KEY`, and `SMS_SENDER_ID` in the server environment. The Retention page
+supports editable broadcasts to all members or a selected retention segment,
+with `{name}` and `{campus}` placeholders. SMS history records provider-accepted,
+failed, and skipped attempts with masked phone numbers; provider acceptance does
+not confirm delivery to a handset.
+
+For an existing Supabase project, run `supabase/sms-logs-migration.sql` in the
+Supabase SQL Editor before deploying this SMS history feature. New projects can
+use the updated `supabase/schema.sql`.
+
 ## Technology Stack
 
 - **Frontend**: React + Vite

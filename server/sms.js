@@ -123,7 +123,7 @@ async function sendSingle({ to, message, from }) {
   }
 }
 
-async function sendBulk({ recipients, message, from }) {
+async function sendBulk({ recipients, message, from, templateValues = {} }) {
   const cfg = getConfig();
   if (!cfg.enabled || !cfg.apiKey) {
     return { enabled: false, sent: 0, failed: 0, skipped: true, reason: 'SMS not configured' };
@@ -131,8 +131,11 @@ async function sendBulk({ recipients, message, from }) {
   const results = [];
   for (const recipient of recipients) {
     const to = recipient && recipient.phone ? recipient.phone : recipient;
-    const result = await sendSingle({ to, message, from });
-    results.push(result);
+    const personalizedMessage = recipient && typeof recipient === 'object'
+      ? fillTemplate(message, { name: recipient.name || '', ...templateValues })
+      : message;
+    const result = await sendSingle({ to, message: personalizedMessage, from });
+    results.push({ ...result, name: recipient?.name || null });
   }
   const sent = results.filter((r) => r.sent).length;
   const failed = results.filter((r) => !r.sent && !r.skipped).length;
@@ -141,7 +144,9 @@ async function sendBulk({ recipients, message, from }) {
 }
 
 function fillTemplate(template, values) {
-  return String(template || '').replace(/\{(\w+)\}/g, (m, key) => (key in values ? values[key] : m));
+  return String(template || '').replace(/\{(\w+)\}/g, (match, key) => (
+    Object.hasOwn(values, key) ? values[key] : match
+  ));
 }
 
 export { sendSingle, sendBulk, sendTermii, sendArkesel, health, isSmsEnabled, getConfig, fillTemplate, normalizePhone, PROVIDERS };

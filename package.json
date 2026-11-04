@@ -10,7 +10,8 @@
     "build": "vite build",
     "test": "node --test server/test/*.test.js",
     "lint": "eslint .",
-    "migrate:supabase": "node server/migrate-to-supabase.js"
+    "migrate:supabase": "node server/migrate-to-supabase.js",
+    "reset:campus-passwords": "node server/reset-campus-passwords.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.31.0",

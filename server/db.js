@@ -125,6 +125,18 @@ function createSqliteTables() {
     created_at TEXT NOT NULL
   )`).run();
 
+  sqlite.prepare(`CREATE TABLE IF NOT EXISTS sms_logs (
+    id TEXT PRIMARY KEY,
+    campus TEXT NOT NULL,
+    recipient_name TEXT,
+    recipient_phone_masked TEXT NOT NULL,
+    provider TEXT,
+    status TEXT NOT NULL,
+    source TEXT NOT NULL,
+    error TEXT,
+    created_at TEXT NOT NULL
+  )`).run();
+
   try {
     sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_feedback_campus ON feedback (campus)').run();
   } catch {
@@ -332,6 +344,18 @@ export async function deleteSession(sessionToken) {
     return;
   }
   sqlite.prepare('DELETE FROM sessions WHERE id = ?').run(sessionToken);
+}
+
+export async function deleteAllSessions() {
+  sessionMemoryCache.clear();
+
+  if (supabase) {
+    const { error } = await supabase.from('sessions').delete().not('id', 'is', null);
+    if (error) throw error;
+    return;
+  }
+
+  sqlite.prepare('DELETE FROM sessions').run();
 }
 
 // ---------------------------------------------------------------------------
@@ -1087,6 +1111,50 @@ export async function listFeedback(campus, limit = 50) {
   const where = campus ? 'WHERE campus = ?' : '';
   const params = campus ? [campus, limit] : [limit];
   return sqlite.prepare(`SELECT * FROM feedback ${where} ORDER BY created_at DESC LIMIT ?`).all(...params);
+}
+
+export async function insertSmsLogs(logs) {
+  if (!logs.length) return;
+
+  if (supabase) {
+    const { error } = await supabase.from('sms_logs').insert(logs);
+    if (error) throw new Error(`Supabase insert SMS logs failed: ${error.message}`);
+    return;
+  }
+
+  const insert = sqlite.prepare(`INSERT INTO sms_logs
+    (id, campus, recipient_name, recipient_phone_masked, provider, status, source, error, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const insertMany = sqlite.transaction((rows) => {
+    for (const row of rows) {
+      insert.run(
+        row.id,
+        row.campus,
+        row.recipient_name || null,
+        row.recipient_phone_masked,
+        row.provider || null,
+        row.status,
+        row.source,
+        row.error || null,
+        row.created_at
+      );
+    }
+  });
+  insertMany(logs);
+}
+
+export async function listSmsLogs(campus, limit = 100) {
+  if (supabase) {
+    let query = supabase.from('sms_logs').select('*').order('created_at', { ascending: false }).limit(limit);
+    if (campus) query = query.eq('campus', campus);
+    const { data, error } = await query;
+    if (error) throw new Error(`Supabase list SMS logs failed: ${error.message}`);
+    return data || [];
+  }
+
+  const where = campus ? 'WHERE campus = ?' : '';
+  const params = campus ? [campus, limit] : [limit];
+  return sqlite.prepare(`SELECT * FROM sms_logs ${where} ORDER BY created_at DESC LIMIT ?`).all(...params);
 }
 
 export function closeDatabase() {

@@ -337,6 +337,28 @@ test('SMS send returns 503 when not configured', async () => {
   assert.match(data.error, /not configured/i);
 });
 
+test('admin SMS history lists masked recipient send attempts by campus', async () => {
+  await db.insertSmsLogs([{
+    id: 'sms-log-test-1',
+    campus: 'TESANO CAMPUS',
+    recipient_name: 'SMS Test Recipient',
+    recipient_phone_masked: '***1234',
+    provider: 'arkesel',
+    status: 'accepted',
+    source: 'manual-broadcast',
+    error: null,
+    created_at: new Date().toISOString()
+  }]);
+
+  const { status, data } = await api('GET', '/api/admin/sms/logs', null, SUPER_ADMIN_HEADERS);
+  assert.equal(status, 200);
+  assert.ok(data.logs.some((log) => (
+    log.id === 'sms-log-test-1' &&
+    log.recipient_phone_masked === '***1234' &&
+    log.status === 'accepted'
+  )));
+});
+
 test('feedback submission and admin retrieval', async () => {
   const fb = {
     rating: 5,
@@ -410,4 +432,3 @@ test('super-admin queries respect campus selection (Ashaiman shows 0, Tesano sho
   assert.ok(allStats.data.totalStudents >= tesanoStats.data.totalStudents);
   assert.equal(allStats.data.campus, 'ALL CAMPUSES');
 });
-

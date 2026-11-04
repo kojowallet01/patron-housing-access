@@ -10,7 +10,8 @@ import {
   MessageSquare,
   Send,
   Zap,
-  Star
+  Star,
+  X
 } from 'lucide-react'
 import { API_URL, getCampusAuthHeaders } from '../../config'
 import { useAdminContext } from './AdminLayout'
@@ -43,14 +44,20 @@ function Retention() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [sms, setSms] = useState({ status: null, sending: false, result: null })
+  const [showSmsModal, setShowSmsModal] = useState(false)
+  const [smsSegment, setSmsSegment] = useState('')
   const [campaign, setCampaign] = useState({ running: false, result: null, success: false })
+  const [smsMessage, setSmsMessage] = useState('Hello {name}, we have missed you at {campus}. We would love to see you again soon. Warm regards, the team.')
+  const [smsHistory, setSmsHistory] = useState([])
+  const [smsHistoryError, setSmsHistoryError] = useState('')
 
   const fetchData = useCallback(async () => {
     try {
       const headers = getCampusAuthHeaders(activeCampus)
-      const [res, fbRes] = await Promise.all([
+      const [res, fbRes, smsRes] = await Promise.all([
         fetch(`${API_URL}/admin/retention`, { headers }),
-        fetch(`${API_URL}/admin/feedback`, { headers })
+        fetch(`${API_URL}/admin/feedback`, { headers }),
+        fetch(`${API_URL}/admin/sms/logs`, { headers })
       ])
 
       if (!res.ok) throw new Error('Retention request failed')
@@ -58,6 +65,13 @@ function Retention() {
 
       if (fbRes.ok) {
         setFeedback(await fbRes.json())
+      }
+      if (smsRes.ok) {
+        const smsData = await smsRes.json()
+        setSmsHistory(smsData.logs || [])
+        setSmsHistoryError('')
+      } else {
+        setSmsHistoryError('SMS history is unavailable.')
       }
       setError('')
     } catch (err) {
@@ -72,27 +86,24 @@ function Retention() {
     fetchData()
   }, [fetchData, refreshKey])
 
-  const textableStatuses = ['at_risk', 'churned', 'inactive']
-
   const sendEngagementSms = useCallback(async () => {
-    if (!data) return
+    if (!data || !smsSegment) return
     const recipients = (data.records || [])
-      .filter((r) => textableStatuses.includes(r.status) && r.phone)
+      .filter((r) => r.phone && (smsSegment === 'all' || r.status === smsSegment))
       .map((r) => ({ phone: r.phone, name: r.name }))
     if (recipients.length === 0) {
-      setSms({ status: 'error', sending: false, result: 'No at-risk, churned, or inactive members have a phone number to text.' })
+      setSms({ status: 'error', sending: false, result: 'No members in this section have a phone number to text.' })
       return
     }
     setSms((prev) => ({ ...prev, sending: true, result: null, status: null }))
     try {
       const headers = getCampusAuthHeaders(activeCampus)
-      const message = `Hello {name}, we've missed you at ${activeCampus}. We'd love to see you again soon. Warm regards, the team.`
       const res = await fetch(`${API_URL}/sms/send`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipients,
-          message,
+          message: smsMessage,
           from: undefined
         })
       })
@@ -103,14 +114,16 @@ function Retention() {
       }
       const s = body.sms || {}
       const note = s.sent !== undefined
-        ? `Sent ${s.sent} message(s). ${s.failed ? s.failed + ' failed.' : ''} ${s.skipped ? s.skipped + ' skipped (no provider).' : ''}`
+        ? `Accepted ${s.sent} message(s) by the provider. ${s.failed ? s.failed + ' failed.' : ''} ${s.skipped ? s.skipped + ' skipped.' : ''} ${body.historyWarning || s.historyWarning || ''}`
         : 'Messages sent.'
       setSms({ status: 'success', sending: false, result: note })
+      setShowSmsModal(false)
+      fetchData()
     } catch (err) {
       console.error('SMS send error:', err)
       setSms({ status: 'error', sending: false, result: 'Unable to reach the SMS service.' })
     }
-  }, [data, activeCampus])
+  }, [data, activeCampus, smsMessage, smsSegment, fetchData])
 
   const runAutoCampaign = async () => {
     setCampaign({ running: true, result: null, success: false })
@@ -123,16 +136,22 @@ function Retention() {
       const resData = await res.json()
       if (!res.ok) throw new Error(resData.error || 'Campaign execution failed')
       const s = resData.sms || {}
-      const note = `Auto-campaign complete! Targeted ${resData.cohorts?.totalEligible || 0} patrons (${resData.cohorts?.firstTimeFollowUpsCount || 0} first-time follow-ups [Day 3-7], ${resData.cohorts?.atRiskReengagementsCount || 0} at-risk [Day 25-35]). Dispatched: ${s.sent ?? 0}, Skipped: ${s.skipped ?? 0}.`
+      const note = `Auto-campaign complete! Targeted ${resData.cohorts?.totalEligible || 0} patrons (${resData.cohorts?.firstTimeFollowUpsCount || 0} first-time follow-ups [Day 3-7], ${resData.cohorts?.atRiskReengagementsCount || 0} at-risk [Day 25-35]). Accepted by provider: ${s.sent ?? 0}, Failed: ${s.failed ?? 0}, Skipped: ${s.skipped ?? 0}. ${s.historyWarning || ''}`
       setCampaign({ running: false, result: note, success: true })
+      fetchData()
     } catch (err) {
       setCampaign({ running: false, result: err.message || 'Auto campaign failed', success: false })
     }
   }
 
+  const smsRecipients = useMemo(() => {
+    if (!data) return []
+    return (data.records || []).filter((r) => r.phone && (smsSegment === 'all' || r.status === smsSegment))
+  }, [data, smsSegment])
+
   const textableCount = useMemo(() => {
     if (!data) return 0
-    return (data.records || []).filter((r) => textableStatuses.includes(r.status) && r.phone).length
+    return (data.records || []).filter((r) => r.phone).length
   }, [data])
 
   const rows = useMemo(() => {
@@ -197,18 +216,109 @@ function Retention() {
             <Zap size={16} strokeWidth={2} />
             {campaign.running ? 'Running Drip...' : 'Run Auto-Retention Drip'}
           </button>
-          <button
-            type="button"
-            className="admin-btn admin-btn-primary"
-            onClick={sendEngagementSms}
-            disabled={sms.sending || textableCount === 0}
-            title={textableCount === 0 ? 'No at-risk, churned, or inactive members with a phone number' : `Text ${textableCount} at-risk + churned + inactive members`}
-          >
-            {sms.sending ? <Send size={16} strokeWidth={2} className="admin-spin" /> : <MessageSquare size={16} strokeWidth={2} />}
-            Manual Broadcast ({textableCount})
-          </button>
         </div>
       </div>
+
+      <div className="admin-card" style={{ marginBottom: '24px', padding: '20px' }}>
+        <div className="admin-card-header">
+          <div className="admin-card-title">
+            <MessageSquare size={18} strokeWidth={2} />
+            <h2>SMS Broadcast</h2>
+          </div>
+          <span>{textableCount} members with phone numbers</span>
+        </div>
+        <button
+          type="button"
+          className="admin-btn admin-btn-primary"
+          onClick={() => {
+            setSmsSegment('')
+            setShowSmsModal(true)
+          }}
+          disabled={textableCount === 0}
+          title={textableCount === 0 ? 'No members with phone numbers to text' : 'Choose a member section and compose an SMS'}
+        >
+          <MessageSquare size={16} strokeWidth={2} />
+          Send SMS
+        </button>
+      </div>
+
+      {showSmsModal && (
+        <div className="modal-overlay" onClick={() => !sms.sending && setShowSmsModal(false)}>
+          <div
+            className="modal admin-modal admin-modal-lg"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="retention-sms-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="admin-modal-header">
+              <h3 id="retention-sms-title">Send an SMS</h3>
+              <button
+                type="button"
+                className="admin-modal-close"
+                onClick={() => setShowSmsModal(false)}
+                disabled={sms.sending}
+                aria-label="Close"
+              >
+                <X size={18} strokeWidth={2} />
+              </button>
+            </div>
+            <p className="admin-modal-subtitle">Choose who should receive the message and review it before sending.</p>
+            <div className="form-group">
+              <label htmlFor="retention-sms-segment">Section of people</label>
+              <select
+                className="retention-sms-input"
+                id="retention-sms-segment"
+                value={smsSegment}
+                onChange={(event) => setSmsSegment(event.target.value)}
+              >
+                <option value="">Select a section</option>
+                <option value="all">All members ({textableCount} with phone numbers)</option>
+                {Object.entries(STATUS_META).map(([status, meta]) => {
+                  const count = (data.records || []).filter((record) => record.status === status && record.phone).length
+                  return <option key={status} value={status}>{meta.label} ({count} with phone numbers)</option>
+                })}
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="retention-sms-message">Message</label>
+              <textarea
+                className="retention-sms-input"
+                id="retention-sms-message"
+                value={smsMessage}
+                onChange={(event) => setSmsMessage(event.target.value)}
+                rows={4}
+                maxLength={500}
+                placeholder="Write the SMS message"
+                style={{ minHeight: '110px', resize: 'vertical' }}
+              />
+            </div>
+            <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '13px' }}>
+              {smsSegment
+                ? `${smsRecipients.length} recipient${smsRecipients.length === 1 ? '' : 's'} with a phone number. `
+                : 'Select a section to see the number of recipients. '}
+              Personalize with <code>{'{name}'}</code> and <code>{'{campus}'}</code>.
+              {smsSegment && smsRecipients[0] && (
+                <> Preview: {smsMessage.replaceAll('{name}', smsRecipients[0].name || 'there').replaceAll('{campus}', activeCampus)}</>
+              )}
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="admin-btn" onClick={() => setShowSmsModal(false)} disabled={sms.sending}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn-primary"
+                onClick={sendEngagementSms}
+                disabled={sms.sending || !smsSegment || smsRecipients.length === 0 || !smsMessage.trim()}
+              >
+                {sms.sending ? <Send size={16} strokeWidth={2} className="admin-spin" /> : <MessageSquare size={16} strokeWidth={2} />}
+                {sms.sending ? 'Sending...' : `Send SMS (${smsRecipients.length})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {campaign.result && (
         <div className={`admin-alert admin-alert-${campaign.success ? 'success' : 'error'}`}>
@@ -221,6 +331,43 @@ function Retention() {
           {sms.result}
         </div>
       )}
+
+      <div className="admin-card" style={{ marginBottom: '24px' }}>
+        <div className="admin-card-header">
+          <div className="admin-card-title">
+            <Send size={18} strokeWidth={2} />
+            <h2>SMS Send History</h2>
+          </div>
+          <span style={{ color: '#64748b', fontSize: '13px' }}>
+            Provider acceptance is shown here; final handset delivery is not confirmed.
+          </span>
+        </div>
+        {smsHistoryError && <p className="admin-alert admin-alert-error">{smsHistoryError}</p>}
+        {!smsHistoryError && smsHistory.length === 0 ? (
+          <div className="admin-empty-state"><p>No SMS attempts recorded for this campus yet.</p></div>
+        ) : smsHistory.length > 0 ? (
+          <div className="admin-table-scroll">
+            <table className="admin-table">
+              <thead>
+                <tr><th>Time</th><th>Recipient</th><th>Number</th><th>Source</th><th>Provider</th><th>Status</th><th>Details</th></tr>
+              </thead>
+              <tbody>
+                {smsHistory.map((item) => (
+                  <tr key={item.id}>
+                    <td>{new Date(item.created_at).toLocaleString()}</td>
+                    <td>{item.recipient_name || '—'}</td>
+                    <td>{item.recipient_phone_masked}</td>
+                    <td>{item.source}</td>
+                    <td>{item.provider || '—'}</td>
+                    <td>{item.status}</td>
+                    <td>{item.error || (item.status === 'accepted' ? 'Accepted by provider; delivery pending/unknown' : '—')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </div>
 
       <div className="admin-stats-grid admin-stats-grid-4">
         {tiles.map((tile) => (

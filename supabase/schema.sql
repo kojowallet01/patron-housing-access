@@ -51,12 +51,25 @@ create table if not exists public.feedback (
   created_at text not null
 );
 
+create table if not exists public.sms_logs (
+  id                     text primary key,
+  campus                 text not null,
+  recipient_name         text,
+  recipient_phone_masked text not null,
+  provider               text,
+  status                 text not null,
+  source                 text not null,
+  error                  text,
+  created_at             text not null
+);
+
 create index if not exists idx_students_campus on public.students (campus);
 create index if not exists idx_access_tokens_campus on public.access_tokens (campus);
 create index if not exists idx_access_tokens_student on public.access_tokens (student_id);
 create index if not exists idx_access_tokens_token on public.access_tokens (token, valid_date);
 create index if not exists idx_sessions_expires on public.sessions (expires_at);
 create index if not exists idx_feedback_campus on public.feedback (campus);
+create index if not exists idx_sms_logs_campus_created on public.sms_logs (campus, created_at);
 
 -- RLS is intentionally left disabled. All traffic is routed through the
 -- Express API layer, which uses the service_role key (bypasses RLS) and

@@ -1,0 +1,161 @@
+╔═══════════════════════════════════════════════════════════════════╗
+║           RENDER PASSWORD SETUP - QUICK GUIDE                     ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+✅ CODE PUSHED TO GITHUB SUCCESSFULLY!
+
+🚨 IMPORTANT: Your .env file is NOT on GitHub (for security).
+    You must add passwords manually on Render.
+
+──────────────────────────────────────────────────────────────────────
+STEP 1: GO TO RENDER
+──────────────────────────────────────────────────────────────────────
+Open: https://dashboard.render.com
+Login to your account
+Find: patron-housing-access service
+Click on it
+
+
+──────────────────────────────────────────────────────────────────────
+STEP 2: OPEN ENVIRONMENT VARIABLES
+──────────────────────────────────────────────────────────────────────
+Left sidebar → Click "Environment"
+Click button: "Add Environment Variable"
+
+
+──────────────────────────────────────────────────────────────────────
+STEP 3: ADD THESE 5 CRITICAL VARIABLES (Copy exact values)
+──────────────────────────────────────────────────────────────────────
+
+Variable #1 - Super Admin Password:
+────────────────────────────────
+Key:   SUPER_ADMIN_TOKEN
+Value: REPLACE_WITH_UNIQUE_SUPER_ADMIN_SECRET
+
+Variable #2 - Admin Fallback:
+────────────────────────────────
+Key:   ADMIN_TOKEN
+Value: REPLACE_WITH_UNIQUE_ADMIN_SECRET
+
+Variable #3 - Security Fallback:
+────────────────────────────────
+Key:   SECURITY_TOKEN
+Value: REPLACE_WITH_UNIQUE_SECURITY_SECRET
+
+Variable #4 - Campus Admin Passwords (ONE LINE - NO BREAKS):
+────────────────────────────────────────────────────────────
+Key:   CAMPUS_ADMIN_TOKENS
+Value: {"TESANO CAMPUS":"REPLACE_WITH_UNIQUE_TESANO_ADMIN_SECRET","CANTOMENT CAMPUS":"REPLACE_WITH_UNIQUE_CANTOMENT_ADMIN_SECRET","ASHIAMAN CAMPUS":"REPLACE_WITH_UNIQUE_ASHIAMAN_ADMIN_SECRET","LEGON CAMPUS":"REPLACE_WITH_UNIQUE_LEGON_ADMIN_SECRET","TEMA CAMPUS":"REPLACE_WITH_UNIQUE_TEMA_ADMIN_SECRET"}
+
+Variable #5 - Campus Security Passwords (ONE LINE - NO BREAKS):
+──────────────────────────────────────────────────────────────
+Key:   CAMPUS_SECURITY_TOKENS
+Value: {"TESANO CAMPUS":"REPLACE_WITH_UNIQUE_TESANO_SECURITY_SECRET","CANTOMENT CAMPUS":"REPLACE_WITH_UNIQUE_CANTOMENT_SECURITY_SECRET","ASHIAMAN CAMPUS":"REPLACE_WITH_UNIQUE_ASHIAMAN_SECURITY_SECRET","LEGON CAMPUS":"REPLACE_WITH_UNIQUE_LEGON_SECURITY_SECRET","TEMA CAMPUS":"REPLACE_WITH_UNIQUE_TEMA_SECURITY_SECRET"}
+
+
+──────────────────────────────────────────────────────────────────────
+STEP 4: ADD OPTIONAL BUT RECOMMENDED VARIABLES
+──────────────────────────────────────────────────────────────────────
+
+Key:   CAMPUS_INSTITUTE_NAME
+Value: ACCRA INSTITUTE FACULTY STUDENT PORTAL
+
+Key:   DEFAULT_CAMPUS
+Value: TESANO CAMPUS
+
+Key:   NODE_ENV
+Value: production
+
+
+──────────────────────────────────────────────────────────────────────
+STEP 5: SAVE AND WAIT FOR REDEPLOY
+──────────────────────────────────────────────────────────────────────
+Click "Save Changes" button
+Render will auto-redeploy (takes 2-5 minutes)
+Watch the "Logs" tab for progress
+Wait for "Build successful" message
+
+
+──────────────────────────────────────────────────────────────────────
+STEP 6: TEST YOUR PASSWORDS
+──────────────────────────────────────────────────────────────────────
+Your Render URL: https://YOUR-APP-NAME.onrender.com
+
+Test Super Admin:
+  URL:      https://YOUR-APP-NAME.onrender.com/admin/login
+  Role:     Super Admin
+  Campus:   Any
+  Password: REPLACE_WITH_UNIQUE_SUPER_ADMIN_SECRET
+
+Test Campus Admin (Tesano):
+  Role:     Admin
+  Campus:   TESANO CAMPUS
+  Password: REPLACE_WITH_UNIQUE_TESANO_ADMIN_SECRET
+
+Test Security (Tesano):
+  URL:      https://YOUR-APP-NAME.onrender.com/security
+  Role:     Security
+  Campus:   TESANO CAMPUS
+  Password: REPLACE_WITH_UNIQUE_TESANO_SECURITY_SECRET
+
+
+──────────────────────────────────────────────────────────────────────
+⚠️ COMMON MISTAKES TO AVOID
+──────────────────────────────────────────────────────────────────────
+❌ Adding line breaks in JSON values
+❌ Using single quotes ' instead of double quotes "
+❌ Adding spaces before/after password
+❌ Forgetting to click "Save Changes"
+❌ Not waiting for redeploy to complete
+❌ Testing before redeploy finishes
+
+
+──────────────────────────────────────────────────────────────────────
+✅ SUCCESS INDICATORS
+──────────────────────────────────────────────────────────────────────
+✓ Render shows "Live" status (green)
+✓ No errors in Logs tab
+✓ Can access your URL without 500 errors
+✓ Login page loads correctly
+✓ Super Admin password works
+✓ Can switch campuses in dropdown
+
+
+──────────────────────────────────────────────────────────────────────
+🚨 IF IT DOESN'T WORK
+──────────────────────────────────────────────────────────────────────
+1. Check Render Logs tab for error messages
+2. Verify all 5 password variables are added
+3. Check for typos in variable names (they're case-sensitive!)
+4. Make sure JSON values have NO line breaks
+5. Click "Manual Deploy" → "Deploy latest commit"
+6. Wait 3-5 minutes and try again
+
+
+──────────────────────────────────────────────────────────────────────
+📞 RENDER SUPPORT LINKS
+──────────────────────────────────────────────────────────────────────
+Environment Variables Guide:
+https://render.com/docs/configure-environment-variables
+
+Deployment Logs:
+Click "Logs" tab in your service
+
+
+──────────────────────────────────────────────────────────────────────
+🎯 NEXT STEPS AFTER SUCCESSFUL SETUP
+──────────────────────────────────────────────────────────────────────
+1. Log in as Super Admin
+2. Go to Security tab
+3. Change default passwords to stronger ones
+4. Test all campus logins
+5. Train staff on new passwords
+6. Document production passwords securely
+
+
+═══════════════════════════════════════════════════════════════════
+Good luck with your Render deployment! 🚀
+
+Your local server is still running at: http://localhost:3000
+Check RENDER_PASSWORD_SETUP.md for detailed instructions
+═══════════════════════════════════════════════════════════════════
