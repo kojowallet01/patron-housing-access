@@ -66,8 +66,7 @@ function PasswordManager() {
     setVisibleRoles((prev) => ({ ...prev, [role]: !prev[role] }))
   }
 
-  const currentValue = (role) =>
-    draftPasswords[role] ?? credentialMap[role]?.[selectedCampus] ?? ''
+  const currentValue = (role) => draftPasswords[role] ?? ''
 
   const formatTimeAgo = (ts) => {
     if (!ts) return ''
@@ -187,6 +186,7 @@ function PasswordManager() {
         {ROLES.map((role) => {
           const isVisible = visibleRoles[role.value]
           const value = currentValue(role.value)
+          const isSet = Boolean(credentialMap[role.value]?.[selectedCampus])
           return (
             <div key={role.value} className="admin-card admin-password-card">
               <div className="admin-password-head">
@@ -200,7 +200,7 @@ function PasswordManager() {
                   </div>
                 </div>
                 <span className="admin-password-status">
-                  {value ? (
+                  {isSet ? (
                     <>
                       <span className="admin-status-dot"></span>
                       Set
@@ -215,14 +215,18 @@ function PasswordManager() {
               </div>
 
               <div className="admin-password-field">
+                <p className="admin-password-unsaved">
+                  Saved passwords are write-only. Enter a new password to replace the current one.
+                </p>
                 <div className="admin-password-input-wrap">
                   <Lock size={16} strokeWidth={2} className="admin-password-lock" />
                   <input
                     type={isVisible ? 'text' : 'password'}
                     value={value}
                     onChange={(e) => handleDraftChange(role.value, e.target.value)}
-                    placeholder={`Enter ${role.label} password`}
+                    placeholder={`Enter new ${role.label} password (12+ characters)`}
                     autoComplete="off"
+                    minLength={12}
                   />
                   <button
                     type="button"

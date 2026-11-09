@@ -9,12 +9,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pha-test-'));
 process.env.DB_PATH = path.join(tmpDir, 'test.db');
+process.env.NODE_ENV = 'production';
 process.env.ALLOW_UNAUTHENTICATED = 'true';
 process.env.SUPER_ADMIN_TOKEN = 'test-super-admin-token';
+process.env.SECURITY_TOKEN = 'test-security-token';
 process.env.PORT = '0';
 
 const SUPER_ADMIN_HEADERS = {
   'x-super-admin-token': 'test-super-admin-token',
+  'x-campus': 'TESANO CAMPUS'
+};
+const SECURITY_HEADERS = {
+  'x-security-token': 'test-security-token',
   'x-campus': 'TESANO CAMPUS'
 };
 
@@ -22,15 +28,68 @@ let server;
 let baseUrl;
 let db;
 
+async function registrationClassBooking(campus) {
+  const campusName = campus || 'TESANO CAMPUS';
+  let term = (await db.listAcademicTerms(campusName)).find((item) => item.status === 'active');
+  if (!term) {
+    const today = new Date().toISOString().slice(0, 10);
+    const created = await api('POST', '/api/admin/academic-terms', {
+      name: 'API Test Term',
+      start_date: today,
+      end_date: dateOffset(today, 365),
+      status: 'active'
+    }, { ...SUPER_ADMIN_HEADERS, 'x-campus': campusName });
+    if (created.status !== 200) throw new Error(created.data?.error || 'Unable to create the API test term.');
+    term = created.data.term;
+  }
+
+  let classSchedule = (await db.listClassSchedules(campusName, term.id))
+    .find((item) => item.title === 'API Test Registration Class');
+  if (!classSchedule) {
+    const created = await api('POST', '/api/admin/classes', {
+      term_id: term.id,
+      title: 'API Test Registration Class',
+      description: 'Registration requirement test fixture',
+      day_of_week: 2,
+      start_time: '00:00',
+      end_time: '23:59',
+      classroom: `API Test Registration ${term.id.slice(0, 40)}`,
+      capacity: 5000,
+      status: 'published'
+    }, { ...SUPER_ADMIN_HEADERS, 'x-campus': campusName });
+    if (created.status !== 200) throw new Error(created.data?.error || 'Unable to create the API test class.');
+    classSchedule = created.data.class;
+  }
+
+  const earliest = term.start_date > new Date().toISOString().slice(0, 10)
+    ? term.start_date
+    : dateOffset(new Date().toISOString().slice(0, 10), 1);
+  const classDate = nextWeekdayDate(classSchedule.day_of_week, dateOffset(earliest, -1));
+  if (classDate > term.end_date) throw new Error('The active API test term is too short for a registration fixture.');
+  return { classId: classSchedule.id, classDate };
+}
+
 async function api(method, pathname, body, headers = {}) {
-  const hasBody = body !== undefined && body !== null;
+  let requestBody = body;
+  if (method === 'POST' && pathname === '/api/register' && body &&
+      !Object.prototype.hasOwnProperty.call(body, 'classBookings')) {
+    requestBody = {
+      ...body,
+      classBookings: [await registrationClassBooking(body.campus)]
+    };
+  }
+  if (method === 'POST' && pathname === '/api/register' && requestBody &&
+      !Object.prototype.hasOwnProperty.call(requestBody, 'date_of_birth')) {
+    requestBody = { ...requestBody, date_of_birth: '1990-01-01' };
+  }
+  const hasBody = requestBody !== undefined && requestBody !== null;
   const response = await fetch(`${baseUrl}${pathname}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
       ...headers
     },
-    body: hasBody ? JSON.stringify(body) : undefined
+    body: hasBody ? JSON.stringify(requestBody) : undefined
   });
   let data;
   try {
@@ -38,7 +97,19 @@ async function api(method, pathname, body, headers = {}) {
   } catch {
     data = null;
   }
-  return { status: response.status, data };
+  return { status: response.status, data, headers: response.headers };
+}
+
+function dateOffset(date, offset) {
+  const result = new Date(`${date}T00:00:00.000Z`);
+  result.setUTCDate(result.getUTCDate() + offset);
+  return result.toISOString().slice(0, 10);
+}
+
+function nextWeekdayDate(weekday, fromDate) {
+  const currentWeekday = new Date(`${fromDate}T00:00:00.000Z`).getUTCDay();
+  const offset = ((weekday - currentWeekday + 7) % 7) || 7;
+  return dateOffset(fromDate, offset);
 }
 
 before(async () => {
@@ -62,18 +133,70 @@ test('GET /api returns service info', async () => {
   assert.ok(data.message.includes('API is available'));
   assert.ok(Array.isArray(data.campuses));
   assert.ok(data.campuses.length >= 1);
+  const health = await api('GET', '/api/health');
+  assert.equal(health.status, 200);
+  assert.equal(health.data.classScheduleReady, true);
+});
+
+test('initial timetable seeds editable weekly classes once', async () => {
+  const campus = 'API SEED TEST CAMPUS';
+  await db.seedInitialTimetables([campus]);
+  await db.seedInitialTimetables([campus]);
+  const terms = await db.listAcademicTerms(campus);
+  const classes = await db.listClassSchedules(campus, terms[0]?.id);
+  assert.equal(terms.length, 1);
+  assert.equal(terms[0].status, 'active');
+  assert.equal(classes.length, 19);
+  assert.ok(classes.every((classSchedule) => classSchedule.status === 'published'));
+  assert.ok(classes.some((classSchedule) =>
+    classSchedule.day_of_week === 2 && classSchedule.start_time === '14:00' && classSchedule.classroom === 'CR'
+  ));
 });
 
 test('register creates a student', async () => {
   const { status, data } = await api('POST', '/api/register', {
     name: 'Test Student',
     phone: '+233 20 000 0001',
+    date_of_birth: '1990-01-01',
     purpose: 'Library visit',
     campus: 'TESANO CAMPUS'
   });
   assert.equal(status, 200);
   assert.equal(data.success, true);
   assert.ok(data.studentId);
+  const student = await db.findStudentByPhoneAndCampus('+233 20 000 0001', 'TESANO CAMPUS');
+  assert.equal(student.date_of_birth, '1990-01-01');
+});
+
+test('registration requires a valid non-future date of birth', async () => {
+  for (const [phone, dateOfBirth] of [
+    ['+233 20 000 0091', null],
+    ['+233 20 000 0092', '2027-01-01'],
+    ['+233 20 000 0093', '1990-02-30']
+  ]) {
+    const response = await api('POST', '/api/register', {
+      name: 'Invalid Date of Birth',
+      phone,
+      date_of_birth: dateOfBirth,
+      purpose: 'Registration validation',
+      campus: 'TESANO CAMPUS'
+    });
+    assert.equal(response.status, 400);
+    assert.match(response.data.error, /date of birth/i);
+    assert.equal(await db.findStudentByPhoneAndCampus(phone, 'TESANO CAMPUS'), null);
+  }
+});
+
+test('registration requires at least one valid class selection', async () => {
+  const missingClass = await api('POST', '/api/register', {
+    name: 'No Class Selection',
+    phone: '+233 20 000 0090',
+    purpose: 'Registration validation',
+    campus: 'TESANO CAMPUS',
+    classBookings: []
+  });
+  assert.equal(missingClass.status, 400);
+  assert.equal(await db.findStudentByPhoneAndCampus('+233 20 000 0090', 'TESANO CAMPUS'), null);
 });
 
 test('register rejects duplicate phone on same campus', async () => {
@@ -103,7 +226,7 @@ test('verify-token validates a token', async () => {
   const { status, data } = await api('POST', '/api/verify-token', {
     token: gen.data.token,
     campus: 'TESANO CAMPUS'
-  });
+  }, SECURITY_HEADERS);
   assert.equal(status, 200);
   assert.equal(data.valid, true);
   assert.equal(data.student.name, 'Test Student');
@@ -125,7 +248,7 @@ test('re-scanning a token preserves the original check-in time', async () => {
   const first = await api('POST', '/api/verify-token', {
     token: gen.data.token,
     campus: 'TESANO CAMPUS'
-  });
+  }, SECURITY_HEADERS);
   assert.equal(first.status, 200);
   const firstVerifiedAt = first.data.verifiedAt;
 
@@ -134,7 +257,7 @@ test('re-scanning a token preserves the original check-in time', async () => {
   const second = await api('POST', '/api/verify-token', {
     token: gen.data.token,
     campus: 'TESANO CAMPUS'
-  });
+  }, SECURITY_HEADERS);
   assert.equal(second.status, 200);
   assert.notEqual(second.data.verifiedAt, firstVerifiedAt);
 
@@ -162,7 +285,7 @@ test('generate-token response includes verified visit history', async () => {
   const verify = await api('POST', '/api/verify-token', {
     token: gen.data.token,
     campus: 'TESANO CAMPUS'
-  });
+  }, SECURITY_HEADERS);
   assert.equal(verify.status, 200);
 
   const gen2 = await api('POST', '/api/generate-token', {
@@ -206,12 +329,12 @@ test('admin export returns backup structure', async () => {
 
 test('export requires super admin', async () => {
   const { status } = await api('GET', '/api/admin/export');
-  assert.equal(status, 403);
+  assert.equal(status, 401);
 });
 
 test('restore requires super admin', async () => {
   const { status } = await api('POST', '/api/admin/restore', { students: [], tokens: [], settings: [] });
-  assert.equal(status, 403);
+  assert.equal(status, 401);
 });
 
 test('restore rejects malformed payloads', async () => {
@@ -694,4 +817,391 @@ test('super-admin queries respect campus selection (Ashaiman shows 0, Tesano sho
   assert.equal(allStats.status, 200);
   assert.ok(allStats.data.totalStudents >= tesanoStats.data.totalStudents);
   assert.equal(allStats.data.campus, 'ALL CAMPUSES');
+});
+
+test('campus passwords are stored as hashes and staff sessions use HttpOnly cookies', async () => {
+  const password = 'a-long-test-password-123';
+  const saved = await api('POST', '/api/super-admin/passwords', {
+    campus: 'LEGON CAMPUS',
+    role: 'admin',
+    password
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(saved.status, 200);
+
+  const storedMap = JSON.parse(db.getSettingSync('campus_admin_tokens'));
+  assert.match(storedMap['LEGON CAMPUS'], /^scrypt\$/);
+  assert.equal(storedMap['LEGON CAMPUS'].includes(password), false);
+
+  const passwordMap = await api('GET', '/api/super-admin/passwords', null, SUPER_ADMIN_HEADERS);
+  assert.equal(passwordMap.status, 200);
+  assert.equal(passwordMap.data.admin['LEGON CAMPUS'], true);
+  assert.equal(JSON.stringify(passwordMap.data).includes(password), false);
+  assert.equal(JSON.stringify(passwordMap.data).includes(storedMap['LEGON CAMPUS']), false);
+
+  const login = await api('POST', '/api/validate-login', {
+    role: 'admin',
+    campus: 'LEGON CAMPUS',
+    password
+  });
+  assert.equal(login.status, 200);
+  assert.equal(login.data.valid, true);
+  assert.equal('sessionToken' in login.data, false);
+  const cookie = (login.headers.get('set-cookie') || '').split(';')[0];
+  assert.match(cookie, /^aifsp_session=/);
+  assert.match(login.headers.get('set-cookie'), /HttpOnly/i);
+
+  const session = await api('GET', '/api/session', undefined, { cookie });
+  assert.equal(session.status, 200);
+  assert.equal(session.data.role, 'admin');
+  assert.equal(session.data.campus, 'LEGON CAMPUS');
+
+  await db.setSetting('campus_admin_tokens', JSON.stringify({
+    ...storedMap,
+    'CANTOMENT CAMPUS': 'legacy-campus-password'
+  }));
+  const legacyLogin = await api('POST', '/api/validate-login', {
+    role: 'admin',
+    campus: 'CANTOMENT CAMPUS',
+    password: 'legacy-campus-password'
+  });
+  assert.equal(legacyLogin.data.valid, true);
+  const upgradedMap = JSON.parse(db.getSettingSync('campus_admin_tokens'));
+  assert.match(upgradedMap['CANTOMENT CAMPUS'], /^scrypt\$/);
+  assert.equal(upgradedMap['CANTOMENT CAMPUS'].includes('legacy-campus-password'), false);
+});
+
+test('access-code issuance is throttled per phone and IP', async () => {
+  const phone = '+233 20 000 0077';
+  const registered = await api('POST', '/api/register', {
+    name: 'Rate Limited Student',
+    phone,
+    purpose: 'Study',
+    campus: 'TESANO CAMPUS'
+  });
+  assert.equal(registered.status, 200);
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const request = await api('POST', '/api/generate-token', { phone, campus: 'TESANO CAMPUS' });
+    assert.equal(request.status, 200);
+  }
+  const limited = await api('POST', '/api/generate-token', { phone, campus: 'TESANO CAMPUS' });
+  assert.equal(limited.status, 429);
+});
+
+test('class bookings never grant campus access and class attendance stays separate', async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const campus = 'TESANO CAMPUS';
+  const termResponse = await api('POST', '/api/admin/academic-terms', {
+    name: 'Test Academic Term',
+    start_date: dateOffset(today, -1),
+    end_date: dateOffset(today, 30),
+    status: 'active'
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(termResponse.status, 200);
+  const termId = termResponse.data.term.id;
+
+  const todayWeekday = new Date(`${today}T00:00:00.000Z`).getUTCDay();
+  const classBody = {
+    term_id: termId,
+    title: 'Foundations of the Restoration',
+    description: 'Core course',
+    day_of_week: todayWeekday,
+    start_time: '00:00',
+    end_time: '23:59',
+    classroom: 'Room 101',
+    capacity: 1,
+    instructor: 'Test Instructor',
+    status: 'published'
+  };
+  const firstClassResponse = await api('POST', '/api/admin/classes', classBody, SUPER_ADMIN_HEADERS);
+  assert.equal(firstClassResponse.status, 200);
+  const firstClass = firstClassResponse.data.class;
+
+  const secondClassResponse = await api('POST', '/api/admin/classes', {
+    ...classBody,
+    title: 'Second Course',
+    classroom: 'Room 102'
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(secondClassResponse.status, 200);
+  const secondClass = secondClassResponse.data.class;
+  const thirdClassResponse = await api('POST', '/api/admin/classes', {
+    ...classBody,
+    title: 'Third Course',
+    classroom: 'Room 103'
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(thirdClassResponse.status, 200);
+  const thirdClass = thirdClassResponse.data.class;
+  const roomConflict = await api('POST', '/api/admin/classes', {
+    ...classBody,
+    title: 'Conflicting Course'
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(roomConflict.status, 409);
+
+  const studentPhone = '+233 20 000 0081';
+  const secondStudentPhone = '+233 20 000 0082';
+  const firstRegistration = await api('POST', '/api/register', {
+    name: 'Class Booking Student',
+    phone: studentPhone,
+    purpose: 'Class attendance test',
+    campus,
+    classBookings: [{
+      classId: firstClass.id,
+      classDate: nextWeekdayDate(todayWeekday, today)
+    }]
+  });
+  const secondRegistration = await api('POST', '/api/register', {
+    name: 'Second Class Student',
+    phone: secondStudentPhone,
+    purpose: 'Class capacity test',
+    campus,
+    classBookings: [{
+      classId: firstClass.id,
+      classDate: nextWeekdayDate(todayWeekday, dateOffset(today, 7))
+    }]
+  });
+  assert.equal(firstRegistration.status, 200);
+  assert.equal(secondRegistration.status, 200);
+  const fullClassRegistration = await api('POST', '/api/register', {
+    name: 'Full Class Registration Student',
+    phone: '+233 20 000 0084',
+    purpose: 'Capacity rollback test',
+    campus,
+    classBookings: [{
+      classId: firstClass.id,
+      classDate: nextWeekdayDate(todayWeekday, today)
+    }]
+  });
+  assert.equal(fullClassRegistration.status, 409);
+  assert.equal(await db.findStudentByPhoneAndCampus('+233 20 000 0084', campus), null);
+
+  const publicTimetable = await api('GET', `/api/classes?campus=${encodeURIComponent(campus)}`);
+  assert.equal(publicTimetable.status, 200);
+  assert.equal(publicTimetable.data.term.id, termId);
+  assert.ok(publicTimetable.data.classes.some((course) => course.id === firstClass.id));
+  const openAvailability = await api('GET', `/api/classes/availability?campus=${encodeURIComponent(campus)}&class_id=${firstClass.id}&date=${today}`);
+  assert.equal(openAvailability.status, 200);
+  assert.equal(openAvailability.data.available, true);
+  assert.equal(openAvailability.data.remainingCapacity, 1);
+
+  for (const classSchedule of [firstClass, secondClass, thirdClass]) {
+    const booked = await api('POST', '/api/classes/bookings', {
+      classId: classSchedule.id,
+      classDate: today,
+      name: 'Class Booking Student',
+      phone: studentPhone,
+      campus
+    });
+    assert.equal(booked.status, 201);
+  }
+  const fullAvailability = await api('GET', `/api/classes/availability?campus=${encodeURIComponent(campus)}&class_id=${firstClass.id}&date=${today}`);
+  assert.equal(fullAvailability.data.available, false);
+  assert.equal(fullAvailability.data.remainingCapacity, 0);
+
+  const futureBooking = await api('POST', '/api/classes/bookings', {
+    classId: secondClass.id,
+    classDate: nextWeekdayDate(todayWeekday, dateOffset(today, 1)),
+    name: 'Class Booking Student',
+    phone: studentPhone,
+    campus
+  });
+  assert.equal(futureBooking.status, 201);
+
+  const student = await db.findStudentByPhoneAndCampus(studentPhone, campus);
+  assert.deepEqual(await db.listTokensForStudent(student.id), []);
+  const bookings = await api('GET', `/api/classes/bookings?phone=${encodeURIComponent(studentPhone)}&name=${encodeURIComponent('Class Booking Student')}&campus=${encodeURIComponent(campus)}`);
+  assert.equal(bookings.status, 200);
+  assert.equal(bookings.data.bookings.length, 5);
+  const todaysBookings = bookings.data.bookings.filter((booking) => booking.class_date === today);
+  assert.equal(todaysBookings.length, 3);
+  assert.ok(bookings.data.bookings.every((booking) => booking.status === 'booked' && booking.attendance === null));
+
+  const beforeCampusEntry = await api('GET', `/api/admin/classes/attendance?date=${today}`, null, SUPER_ADMIN_HEADERS);
+  assert.equal(beforeCampusEntry.status, 200);
+  assert.equal(beforeCampusEntry.data.summary.pending, 3);
+  assert.equal(beforeCampusEntry.data.summary.bookedWithoutCampusEntry, 3);
+  const firstClassReport = await api('GET', `/api/admin/classes/attendance?date=${today}&class_id=${firstClass.id}`, null, SUPER_ADMIN_HEADERS);
+  assert.equal(firstClassReport.status, 200);
+  assert.equal(firstClassReport.data.roster.length, 1);
+
+  const firstClassBooking = todaysBookings.find((booking) => booking.class_id === firstClass.id);
+  const secondClassBooking = todaysBookings.find((booking) => booking.class_id === secondClass.id);
+  const refusedMark = await api('PUT', `/api/admin/classes/bookings/${firstClassBooking.id}/attendance`, {
+    status: 'present'
+  });
+  assert.equal(refusedMark.status, 401);
+
+  const accessToken = await api('POST', '/api/generate-token', { phone: studentPhone, campus });
+  assert.equal(accessToken.status, 200);
+  const verifiedEntry = await api('POST', '/api/verify-token', {
+    token: accessToken.data.token,
+    campus
+  }, SECURITY_HEADERS);
+  assert.equal(verifiedEntry.status, 200);
+  assert.equal(verifiedEntry.data.valid, true);
+
+  const afterCampusEntry = await api('GET', `/api/admin/classes/attendance?date=${today}`, null, SUPER_ADMIN_HEADERS);
+  assert.equal(afterCampusEntry.data.summary.campusEntries, 1);
+  assert.equal(afterCampusEntry.data.summary.pending, 3);
+  assert.ok(afterCampusEntry.data.roster.every((booking) => booking.campus_attended));
+  assert.ok(afterCampusEntry.data.roster.every((booking) => booking.campus_entry_at));
+
+  const firstAttendance = await api('PUT', `/api/admin/classes/bookings/${firstClassBooking.id}/attendance`, {
+    status: 'present'
+  }, SUPER_ADMIN_HEADERS);
+  const secondAttendance = await api('PUT', `/api/admin/classes/bookings/${secondClassBooking.id}/attendance`, {
+    status: 'present'
+  }, SUPER_ADMIN_HEADERS);
+  const prematureAbsence = await api('PUT', `/api/admin/classes/bookings/${todaysBookings.find((booking) => booking.class_id === thirdClass.id).id}/attendance`, {
+    status: 'absent'
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(firstAttendance.status, 200);
+  assert.equal(secondAttendance.status, 200);
+  assert.equal(prematureAbsence.status, 400);
+  const finalReport = await api('GET', `/api/admin/classes/attendance?date=${today}`, null, SUPER_ADMIN_HEADERS);
+  assert.equal(finalReport.data.summary.present, 2);
+  assert.equal(finalReport.data.summary.pending, 1);
+  const analytics = await api('GET', `/api/admin/classes/analytics?start_date=${today}&end_date=${today}`, null, SUPER_ADMIN_HEADERS);
+  assert.equal(analytics.status, 200);
+  assert.equal(analytics.data.summary.totalBookings, 3);
+  assert.equal(analytics.data.summary.attended, 2);
+  assert.equal(analytics.data.summary.pending, 1);
+  assert.ok(analytics.data.summary.capacity >= 3);
+  assert.ok(analytics.data.summary.capacityUtilization > 0);
+  assert.ok(analytics.data.summary.capacityUtilization <= 100);
+  assert.equal(analytics.data.classes.length, 3);
+  const invalidAnalyticsRange = await api('GET', `/api/admin/classes/analytics?start_date=${dateOffset(today, 1)}&end_date=${today}`, null, SUPER_ADMIN_HEADERS);
+  assert.equal(invalidAnalyticsRange.status, 400);
+
+  const overCapacity = await api('POST', '/api/classes/bookings', {
+    classId: firstClass.id,
+    classDate: today,
+    name: 'Second Class Student',
+    phone: secondStudentPhone,
+    campus
+  });
+  assert.equal(overCapacity.status, 409);
+
+  const invalidDate = await api('POST', '/api/classes/bookings', {
+    classId: firstClass.id,
+    classDate: dateOffset(today, 1),
+    name: 'Second Class Student',
+    phone: secondStudentPhone,
+    campus
+  });
+  assert.equal(invalidDate.status, 400);
+});
+
+test('rescheduling and cancelling classes preserve snapshots and notify affected bookings', async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const campus = 'TESANO CAMPUS';
+  const term = (await db.listAcademicTerms(campus)).find((item) => item.status === 'active');
+  assert.ok(term);
+  const futureDate = nextWeekdayDate((new Date(`${today}T00:00:00.000Z`).getUTCDay() + 2) % 7, today);
+  const weekday = new Date(`${futureDate}T00:00:00.000Z`).getUTCDay();
+  const classBody = {
+    term_id: term.id,
+    title: 'Schedule Change Course',
+    description: 'Original schedule',
+    day_of_week: weekday,
+    start_time: '10:00',
+    end_time: '11:00',
+    classroom: 'Room 201',
+    capacity: 5,
+    instructor: 'Original Instructor',
+    status: 'published'
+  };
+  const created = await api('POST', '/api/admin/classes', classBody, SUPER_ADMIN_HEADERS);
+  assert.equal(created.status, 200);
+  const classId = created.data.class.id;
+
+  const registered = await api('POST', '/api/register', {
+    name: 'Reschedule Student',
+    phone: '+233 20 000 0083',
+    purpose: 'Schedule change test',
+    campus
+  });
+  assert.equal(registered.status, 200);
+  const booked = await api('POST', '/api/classes/bookings', {
+    classId,
+    classDate: futureDate,
+    name: 'Reschedule Student',
+    phone: '+233 20 000 0083',
+    campus
+  });
+  assert.equal(booked.status, 201);
+
+  const changed = await api('POST', '/api/admin/classes', {
+    ...classBody,
+    id: classId,
+    start_time: '14:00',
+    end_time: '15:00',
+    classroom: 'Room 202'
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(changed.status, 200);
+  assert.equal(changed.data.notifications.skipped, 1);
+  const rebookedAfterReschedule = await api('POST', '/api/classes/bookings', {
+    classId,
+    classDate: futureDate,
+    name: 'Reschedule Student',
+    phone: '+233 20 000 0083',
+    campus
+  });
+  assert.equal(rebookedAfterReschedule.status, 201);
+  assert.equal(rebookedAfterReschedule.data.booking.start_time_snapshot, '14:00');
+  const calendarSelection = await api('POST', `/api/classes/bookings/${rebookedAfterReschedule.data.booking.id}/calendar`, {
+    name: 'Reschedule Student',
+    phone: '+233 20 000 0083',
+    campus
+  });
+  assert.equal(calendarSelection.status, 200);
+  assert.ok(calendarSelection.data.calendarAddedAt);
+  const trackedBookingLookup = await api('GET', `/api/classes/bookings?phone=${encodeURIComponent('+233 20 000 0083')}&name=${encodeURIComponent('Reschedule Student')}&campus=${encodeURIComponent(campus)}`);
+  const trackedBooking = trackedBookingLookup.data.bookings.find((booking) => booking.id === rebookedAfterReschedule.data.booking.id);
+  assert.equal(trackedBooking.calendar_added_at, calendarSelection.data.calendarAddedAt);
+  const studentBookings = await api('GET', `/api/classes/bookings?phone=${encodeURIComponent('+233 20 000 0083')}&name=${encodeURIComponent('Reschedule Student')}&campus=${encodeURIComponent(campus)}`);
+  const historicalBooking = studentBookings.data.bookings.find((booking) => booking.status === 'schedule_changed');
+  assert.ok(historicalBooking);
+  assert.equal(historicalBooking.start_time_snapshot, '10:00');
+  assert.equal(historicalBooking.attendance, null);
+  assert.equal(historicalBooking.notifications[0].status, 'skipped');
+
+  const secondBooking = await api('POST', '/api/classes/bookings', {
+    classId,
+    classDate: nextWeekdayDate(weekday, dateOffset(futureDate, 1)),
+    name: 'Reschedule Student',
+    phone: '+233 20 000 0083',
+    campus
+  });
+  assert.equal(secondBooking.status, 201);
+  const cancelled = await api('POST', '/api/admin/classes', {
+    ...changed.data.class,
+    status: 'cancelled'
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(cancelled.status, 200);
+  assert.equal(cancelled.data.notifications.skipped, 2);
+  const afterCancellation = await api('GET', `/api/classes/bookings?phone=${encodeURIComponent('+233 20 000 0083')}&name=${encodeURIComponent('Reschedule Student')}&campus=${encodeURIComponent(campus)}`);
+  assert.ok(afterCancellation.data.bookings.some((booking) => booking.status === 'class_cancelled'));
+
+  const closedClassBooking = await api('POST', '/api/classes/bookings', {
+    classId,
+    classDate: nextWeekdayDate(weekday, dateOffset(futureDate, 8)),
+    name: 'Reschedule Student',
+    phone: '+233 20 000 0083',
+    campus
+  });
+  assert.equal(closedClassBooking.status, 400);
+
+  const reopened = await api('POST', '/api/admin/classes', {
+    ...cancelled.data.class,
+    status: 'published'
+  }, SUPER_ADMIN_HEADERS);
+  assert.equal(reopened.status, 200);
+  const rebookedAfterCancellation = await api('POST', '/api/classes/bookings', {
+    classId,
+    classDate: futureDate,
+    name: 'Reschedule Student',
+    phone: '+233 20 000 0083',
+    campus
+  });
+  assert.equal(rebookedAfterCancellation.status, 201);
 });

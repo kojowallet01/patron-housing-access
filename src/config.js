@@ -1,9 +1,9 @@
 // API Configuration
 // Automatically uses correct API URL based on environment
 
-export const API_URL = import.meta.env.PROD
-  ? '/api'  // Production: uses proxy or same origin
-  : `${window.location.protocol}//${window.location.hostname}:3001/api`;
+const IS_PRODUCTION_BUILD = import.meta.env.MODE === 'production'
+
+export const API_URL = '/api'
 
 export const CAMPUS_INSTITUTE_NAME = 'ACCRA INSTITUTE FACULTY STUDENT PORTAL';
 export const CAMPUS_INSTITUTE_SHORT = 'AIFSP';
@@ -54,21 +54,12 @@ export function setSelectedCampus(campus) {
 
 export function getCampusAuthHeaders(campusOverride) {
   const campus = campusOverride || getSelectedCampus();
-  const headers = { 'x-campus': campus };
-
-  if (typeof window !== 'undefined') {
-    const sessionToken = window.localStorage.getItem('campus-institute-session');
-    if (sessionToken) {
-      headers['x-session-token'] = sessionToken;
-    }
-  }
-
-  return headers;
+  return { 'x-campus': campus };
 }
 
 // Get base URL for QR code generation
 export const getBaseURL = () => {
-  if (import.meta.env.PROD) {
+  if (IS_PRODUCTION_BUILD) {
     return window.location.origin;
   }
   return 'http://localhost:3000';

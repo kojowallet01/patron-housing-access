@@ -76,12 +76,12 @@ function RoleGate({ role, children }) {
 
       const result = await response.json()
 
-      if (!response.ok || !result.valid || !result.sessionToken) {
+      if (!response.ok || !result.valid) {
         setError('Invalid role or password for the selected campus.')
         return
       }
 
-      setSession(result.sessionToken, result.role, result.campus)
+      setSession(result.role, result.campus)
       setSelectedCampus(result.campus)
       setUnlocked(true)
       setError('')

@@ -16,7 +16,8 @@ A complete web-based QR code sign-in system for managing student access to AIFSP
 
 1. **Campus displays QR code at entrance** (on a tablet or screen)
 2. **Student scans QR code** → automatically opens registration page on their phone
-3. **Student registers** → fills name, phone, and purpose
+3. **Student registers** → chooses a class, enters date of birth, name, phone,
+   and purpose
 4. **Student receives access token** → immediately displayed as QR code on their phone
 5. **Student shows token to security** → security scans/verifies token
 6. **Access granted!** → student enters campus
@@ -117,6 +118,9 @@ Supabase SQL Editor if the SMS history table has not been created yet. To enable
 the retention campaign, opt-out, scheduling, and delivery tracking additions,
 run `supabase/retention-features-migration.sql` as well. New projects can use the
 updated `supabase/schema.sql`.
+For existing projects, run `supabase/date-of-birth-migration.sql` to add the date
+of birth field and update the atomic class-registration function. New projects
+can use the updated `supabase/schema.sql`.
 
 The Retention page supports per-campus drip templates, a 1–90 day repeat-send
 cooldown (7 days by default), an eligible-recipient preview, scheduling in
@@ -134,6 +138,77 @@ the `x-sms-webhook-token` header. The app captures provider message IDs when
 they are included in send responses. Return-visit metrics count verified visits
 after an accepted campaign message; they show association, not proof that the
 SMS caused the return.
+
+## Class timetable and attendance
+
+Class bookings are separate from campus access. Students use `/classes` to view
+the active campus timetable and book an occurrence using their campus-registered
+name and phone number. First-time registration requires at least one class
+selection; the student and selected bookings are validated and created together.
+First-time visitors provide their date of birth after selecting a class.
+Returning students continue to use Quick Pass and can manage class bookings
+separately. A booking creates no campus access token; students still use the
+existing entrance QR and daily 4-digit access verification. Class attendance is
+a separate record and is only marked by an authorized admin.
+Absences are not automatic: an admin may mark a student absent after the class
+end time, or mark attendance present. Campus-entry reports and class attendance
+reports remain separate.
+
+Admins manage academic terms and recurring weekly classes from
+`/admin/classes`. A class includes its day, time, room, capacity, and optional
+instructor. A new database is seeded with the initial weekly timetable at each
+campus; seed classes use a one-hour duration and can be changed in the dashboard.
+Only a published class in the active term is bookable. Same-room overlapping
+classes are rejected; concurrent classes in different rooms are allowed.
+Existing bookings store a snapshot of the class details. Rescheduling flags
+upcoming bookings for rebooking; cancelling a class invalidates its upcoming
+bookings. Students can book the same date again after rebooking or after an
+administrator reopens registration; each booking keeps its own schedule
+snapshot and history. When SMS is configured, affected students are sent a
+change notice unless opted out; each provider acceptance, skip, or failure is
+recorded with the booking. Provider acceptance does not confirm handset
+delivery.
+
+Students can add a booking to Google Calendar or Outlook, or download an ICS
+invite with 2-day, 1-day, and 1-hour reminders where supported. The system
+records that a calendar option was selected, not that an external calendar
+successfully synced or delivered a reminder. Admins can filter class attendance
+by class and date, search by student name or phone, and export a CSV that keeps
+campus check-in and class attendance as separate fields. A date-range analytics
+panel summarizes registrations, attendance, capacity utilization, class
+popularity, daily trends, and students with repeated absences.
+
+For an existing Supabase project, run `supabase/class-schedule-migration.sql`
+after the base schema. It adds class tables, indexes, RLS restrictions,
+database-side booking functions, calendar-selection tracking, and constraints
+that preserve rebooking history while limiting active duplicate bookings.
+After the migration succeeds, restart the server; it creates and activates the
+initial term and seeds the editable starter timetable for campuses without an
+existing term. If a campus already has terms but none is active, an admin must
+activate one in `/admin/classes`. New projects can use the updated
+`supabase/schema.sql`.
+
+## Security hardening
+
+For an existing Supabase project, run `supabase/security-hardening-migration.sql`
+after the base schema. It enables Row Level Security and removes direct
+`anon`/`authenticated` table access; the server must continue using the
+Supabase `service_role` key, which must never be exposed to the browser.
+
+In Render, set `ALLOWED_ORIGINS` to the exact deployed website origin (for
+example, `https://your-site.onrender.com`; do not include a path). Add other
+trusted origins as a comma-separated list. Unset means cross-origin browser
+requests are denied. `ALLOW_UNAUTHENTICATED=true` is ignored in production.
+Configure strong server-side `ADMIN_TOKEN`, `SECURITY_TOKEN`, and
+`SUPER_ADMIN_TOKEN` values (or the campus-specific environment maps) before
+deploying.
+
+Staff login sessions are stored in `HttpOnly`, `SameSite=Strict` cookies and
+are not exposed to browser JavaScript. Existing saved campus passwords are
+upgraded to salted scrypt hashes when next used; password settings are
+write-only through the admin API. New passwords must contain at least 12
+characters. Access-code requests remain phone-only, with per-IP and per-phone
+throttling; staff should verify each student's identity when checking a code.
 
 ## Technology Stack
 

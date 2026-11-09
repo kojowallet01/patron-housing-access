@@ -53,10 +53,17 @@ function createSqliteTables() {
     name TEXT NOT NULL,
     phone TEXT NOT NULL,
     purpose TEXT NOT NULL,
+    date_of_birth TEXT,
     campus TEXT NOT NULL DEFAULT 'TESANO CAMPUS',
     created_at TEXT NOT NULL,
     sms_opt_out INTEGER NOT NULL DEFAULT 0
   )`).run();
+
+  try {
+    sqlite.prepare('ALTER TABLE students ADD COLUMN date_of_birth TEXT').run();
+  } catch {
+    // column already exists
+  }
 
   sqlite.prepare(`CREATE TABLE IF NOT EXISTS access_tokens (
     id TEXT PRIMARY KEY,
@@ -154,6 +161,126 @@ function createSqliteTables() {
     result TEXT
   )`).run();
 
+  sqlite.prepare(`CREATE TABLE IF NOT EXISTS academic_terms (
+    id TEXT PRIMARY KEY,
+    campus TEXT NOT NULL,
+    name TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'inactive',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`).run();
+
+  sqlite.prepare(`CREATE TABLE IF NOT EXISTS class_schedules (
+    id TEXT PRIMARY KEY,
+    term_id TEXT NOT NULL REFERENCES academic_terms(id),
+    campus TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    day_of_week INTEGER NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    classroom TEXT NOT NULL,
+    capacity INTEGER NOT NULL,
+    instructor TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'draft',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`).run();
+
+  sqlite.prepare(`CREATE TABLE IF NOT EXISTS class_bookings (
+    id TEXT PRIMARY KEY,
+    class_id TEXT NOT NULL REFERENCES class_schedules(id),
+    student_id TEXT NOT NULL REFERENCES students(id),
+    campus TEXT NOT NULL,
+    class_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'booked',
+    class_title_snapshot TEXT NOT NULL,
+    description_snapshot TEXT NOT NULL DEFAULT '',
+    day_of_week_snapshot INTEGER NOT NULL,
+    start_time_snapshot TEXT NOT NULL,
+    end_time_snapshot TEXT NOT NULL,
+    classroom_snapshot TEXT NOT NULL,
+    instructor_snapshot TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    calendar_added_at TEXT
+  )`).run();
+
+  sqlite.prepare(`CREATE TABLE IF NOT EXISTS class_attendance (
+    id TEXT PRIMARY KEY,
+    booking_id TEXT NOT NULL UNIQUE REFERENCES class_bookings(id),
+    class_id TEXT NOT NULL REFERENCES class_schedules(id),
+    student_id TEXT NOT NULL REFERENCES students(id),
+    class_date TEXT NOT NULL,
+    status TEXT NOT NULL,
+    verified_by TEXT NOT NULL,
+    verified_at TEXT NOT NULL
+  )`).run();
+
+  sqlite.prepare(`CREATE TABLE IF NOT EXISTS class_notifications (
+    id TEXT PRIMARY KEY,
+    booking_id TEXT NOT NULL REFERENCES class_bookings(id),
+    student_id TEXT NOT NULL REFERENCES students(id),
+    event TEXT NOT NULL,
+    status TEXT NOT NULL,
+    provider TEXT,
+    provider_message_id TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL
+  )`).run();
+
+  const classBookingColumns = sqlite.prepare('PRAGMA table_info(class_bookings)').all().map((column) => column.name);
+  if (!classBookingColumns.includes('calendar_added_at')) {
+    sqlite.prepare('ALTER TABLE class_bookings ADD COLUMN calendar_added_at TEXT').run();
+  }
+
+  const classBookingsTable = sqlite.prepare(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'class_bookings'"
+  ).get();
+  if (/\bUNIQUE\s*\(\s*class_id\s*,\s*student_id\s*,\s*class_date\s*\)/i.test(classBookingsTable?.sql || '')) {
+    sqlite.pragma('foreign_keys = OFF');
+    try {
+      sqlite.transaction(() => {
+        sqlite.exec(`
+          CREATE TABLE class_bookings_rebook (
+            id TEXT PRIMARY KEY,
+            class_id TEXT NOT NULL REFERENCES class_schedules(id),
+            student_id TEXT NOT NULL REFERENCES students(id),
+            campus TEXT NOT NULL,
+            class_date TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'booked',
+            class_title_snapshot TEXT NOT NULL,
+            description_snapshot TEXT NOT NULL DEFAULT '',
+            day_of_week_snapshot INTEGER NOT NULL,
+            start_time_snapshot TEXT NOT NULL,
+            end_time_snapshot TEXT NOT NULL,
+            classroom_snapshot TEXT NOT NULL,
+            instructor_snapshot TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            calendar_added_at TEXT
+          );
+          INSERT INTO class_bookings_rebook (
+            id, class_id, student_id, campus, class_date, status, class_title_snapshot,
+            description_snapshot, day_of_week_snapshot, start_time_snapshot, end_time_snapshot,
+            classroom_snapshot, instructor_snapshot, created_at, updated_at, calendar_added_at
+          )
+          SELECT
+            id, class_id, student_id, campus, class_date, status, class_title_snapshot,
+            description_snapshot, day_of_week_snapshot, start_time_snapshot, end_time_snapshot,
+            classroom_snapshot, instructor_snapshot, created_at, updated_at, calendar_added_at
+          FROM class_bookings;
+          DROP TABLE class_bookings;
+          ALTER TABLE class_bookings_rebook RENAME TO class_bookings;
+        `);
+      })();
+    } finally {
+      sqlite.pragma('foreign_keys = ON');
+    }
+  }
+
   const studentColumns = sqlite.prepare('PRAGMA table_info(students)').all().map((column) => column.name);
   if (!studentColumns.includes('sms_opt_out')) {
     sqlite.prepare('ALTER TABLE students ADD COLUMN sms_opt_out INTEGER NOT NULL DEFAULT 0').run();
@@ -168,6 +295,13 @@ function createSqliteTables() {
   }
   sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_sms_logs_recipient_created ON sms_logs (recipient_id, created_at)').run();
   sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_retention_schedules_status_run_at ON retention_schedules (status, run_at)').run();
+  sqlite.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_academic_terms_one_active ON academic_terms (campus) WHERE status = 'active'").run();
+  sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_class_schedules_term_status ON class_schedules (term_id, status)').run();
+  sqlite.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_class_bookings_one_active_per_date
+    ON class_bookings (class_id, student_id, class_date) WHERE status = 'booked'`).run();
+  sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_class_bookings_campus_date ON class_bookings (class_date, status)').run();
+  sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_class_bookings_student_date ON class_bookings (student_id, class_date)').run();
+  sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_class_attendance_date_status ON class_attendance (class_date, status)').run();
 
   try {
     sqlite.prepare('CREATE INDEX IF NOT EXISTS idx_feedback_campus ON feedback (campus)').run();
@@ -185,17 +319,25 @@ function createSqliteTables() {
           name TEXT NOT NULL,
           phone TEXT NOT NULL,
           purpose TEXT NOT NULL,
+          date_of_birth TEXT,
           campus TEXT NOT NULL DEFAULT 'TESANO CAMPUS',
           created_at TEXT NOT NULL,
           UNIQUE(phone, campus)
         );
-        INSERT OR IGNORE INTO students_new SELECT id, name, phone, purpose, campus, created_at FROM students;
+        INSERT OR IGNORE INTO students_new (id, name, phone, purpose, date_of_birth, campus, created_at)
+          SELECT id, name, phone, purpose, date_of_birth, campus, created_at FROM students;
         DROP TABLE students;
         ALTER TABLE students_new RENAME TO students;
       `);
     } finally {
       sqlite.pragma('foreign_keys = ON');
     }
+  }
+
+  try {
+    sqlite.prepare('ALTER TABLE students ADD COLUMN date_of_birth TEXT').run();
+  } catch {
+    // column already exists
   }
 
   try {
@@ -234,6 +376,44 @@ async function checkSupabaseSchema() {
     );
     return false;
   }
+}
+
+export async function checkClassScheduleSchema() {
+  if (!supabase) return true;
+  const requiredTables = [
+    'academic_terms',
+    'class_schedules',
+    'class_bookings',
+    'class_attendance',
+    'class_notifications'
+  ];
+  const results = await Promise.all(requiredTables.map((table) =>
+    supabase.from(table).select('id').limit(1)
+  ));
+  const missingTable = results.find((result) =>
+    result.error && ['PGRST205', '42P01'].includes(result.error.code)
+  );
+  if (missingTable) {
+    console.warn(
+      '[classes] Supabase timetable tables are not ready. Apply supabase/class-schedule-migration.sql before using class registration.'
+    );
+    return false;
+  }
+  const failure = results.find((result) => result.error);
+  if (failure) throw new Error(`Supabase timetable schema check failed: ${failure.error.message}`);
+
+  const { error: calendarColumnError } = await supabase.from('class_bookings')
+    .select('calendar_added_at').limit(1);
+  if (calendarColumnError && calendarColumnError.code === '42703') {
+    console.warn(
+      '[classes] Calendar tracking migration is not ready. Re-run supabase/class-schedule-migration.sql before using class registration.'
+    );
+    return false;
+  }
+  if (calendarColumnError) {
+    throw new Error(`Supabase timetable schema check failed: ${calendarColumnError.message}`);
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +608,7 @@ export async function insertStudent(student) {
     name: student.name,
     phone: student.phone,
     purpose: student.purpose,
+    date_of_birth: student.date_of_birth || null,
     campus: student.campus,
     created_at: student.created_at,
     flagged: student.flagged ? 1 : 0,
@@ -441,10 +622,84 @@ export async function insertStudent(student) {
     return student;
   }
 
-  sqlite.prepare(`INSERT INTO students (id, name, phone, purpose, campus, created_at, sms_opt_out)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(student.id, student.name, student.phone, student.purpose, student.campus, student.created_at, student.sms_opt_out ? 1 : 0);
+  sqlite.prepare(`INSERT INTO students (id, name, phone, purpose, date_of_birth, campus, created_at, sms_opt_out)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(student.id, student.name, student.phone, student.purpose, student.date_of_birth || null, student.campus, student.created_at, student.sms_opt_out ? 1 : 0);
   return student;
+}
+
+export async function registerStudentWithClassBookings(student, bookings, today, currentTime) {
+  if (supabase) {
+    const { data, error } = await supabase.rpc('register_student_with_class_bookings', {
+      p_student: student,
+      p_bookings: bookings,
+      p_today: today,
+      p_current_time: currentTime
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  const transaction = sqlite.transaction(() => {
+    sqlite.prepare(`INSERT INTO students (id, name, phone, purpose, date_of_birth, campus, created_at, sms_opt_out)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0)`).run(
+      student.id, student.name, student.phone, student.purpose, student.date_of_birth, student.campus, student.created_at
+    );
+
+    const insertBooking = sqlite.prepare(`INSERT INTO class_bookings (
+      id, class_id, student_id, campus, class_date, status, class_title_snapshot, description_snapshot,
+      day_of_week_snapshot, start_time_snapshot, end_time_snapshot, classroom_snapshot,
+      instructor_snapshot, created_at, updated_at
+    ) VALUES (
+      @id, @class_id, @student_id, @campus, @class_date, 'booked', @class_title_snapshot, @description_snapshot,
+      @day_of_week_snapshot, @start_time_snapshot, @end_time_snapshot, @classroom_snapshot,
+      @instructor_snapshot, @created_at, @updated_at
+    )`);
+    const createdBookings = [];
+
+    for (const booking of bookings) {
+      const classSchedule = sqlite.prepare('SELECT * FROM class_schedules WHERE id = ? AND campus = ?')
+        .get(booking.class_id, student.campus);
+      const term = classSchedule && sqlite.prepare('SELECT * FROM academic_terms WHERE id = ? AND campus = ?')
+        .get(classSchedule.term_id, student.campus);
+      if (!classSchedule || classSchedule.status !== 'published' || !term || term.status !== 'active') {
+        throw new Error('Class is not open for booking');
+      }
+      if (booking.class_date < today || booking.class_date < term.start_date || booking.class_date > term.end_date ||
+          new Date(`${booking.class_date}T00:00:00.000Z`).getUTCDay() !== classSchedule.day_of_week) {
+        throw new Error('Class date is outside the schedule');
+      }
+      if (booking.class_date === today && currentTime >= classSchedule.end_time) {
+        throw new Error('This class session has already ended and cannot be booked.');
+      }
+
+      const bookedCount = sqlite.prepare(`SELECT COUNT(*) AS count FROM class_bookings
+        WHERE class_id = ? AND class_date = ? AND status = 'booked'`)
+        .get(classSchedule.id, booking.class_date).count;
+      if (bookedCount >= classSchedule.capacity) throw new Error('Class is full');
+
+      const row = {
+        ...booking,
+        student_id: student.id,
+        campus: student.campus,
+        status: 'booked',
+        class_title_snapshot: classSchedule.title,
+        description_snapshot: classSchedule.description,
+        day_of_week_snapshot: classSchedule.day_of_week,
+        start_time_snapshot: classSchedule.start_time,
+        end_time_snapshot: classSchedule.end_time,
+        classroom_snapshot: classSchedule.classroom,
+        instructor_snapshot: classSchedule.instructor,
+        created_at: student.created_at,
+        updated_at: student.created_at
+      };
+      insertBooking.run(row);
+      createdBookings.push(row);
+    }
+
+    return { student, bookings: createdBookings };
+  });
+  return transaction.immediate();
 }
 
 export async function listStudents(campus) {
@@ -579,30 +834,54 @@ export async function listTokensForStudent(studentId) {
 
 export async function exportAllData() {
   if (supabase) {
-    const [students, tokens, settings] = await Promise.all([
+    const [students, tokens, settings, terms, classes, bookings, attendance, notifications] = await Promise.all([
       supabase.from('students').select('*').order('created_at', { ascending: false }),
       supabase.from('access_tokens').select('*').order('created_at', { ascending: false }),
-      supabase.from('settings').select('key, value')
+      supabase.from('settings').select('key, value'),
+      supabase.from('academic_terms').select('*'),
+      supabase.from('class_schedules').select('*'),
+      supabase.from('class_bookings').select('*'),
+      supabase.from('class_attendance').select('*'),
+      supabase.from('class_notifications').select('*')
     ]);
     return {
       students: (students.data || []).map(s => ({ ...s, flagged: Boolean(s.flagged) })),
       tokens: tokens.data || [],
-      settings: settings.data || []
+      settings: settings.data || [],
+      academicTerms: terms.data || [],
+      classSchedules: classes.data || [],
+      classBookings: bookings.data || [],
+      classAttendance: attendance.data || [],
+      classNotifications: notifications.data || []
     };
   }
 
   const students = sqlite.prepare('SELECT * FROM students ORDER BY created_at DESC').all();
   const tokens = sqlite.prepare('SELECT * FROM access_tokens ORDER BY created_at DESC').all();
   const settings = sqlite.prepare('SELECT key, value FROM settings').all();
-  return { students, tokens, settings };
+  const academicTerms = sqlite.prepare('SELECT * FROM academic_terms').all();
+  const classSchedules = sqlite.prepare('SELECT * FROM class_schedules').all();
+  const classBookings = sqlite.prepare('SELECT * FROM class_bookings').all();
+  const classAttendance = sqlite.prepare('SELECT * FROM class_attendance').all();
+  const classNotifications = sqlite.prepare('SELECT * FROM class_notifications').all();
+  return { students, tokens, settings, academicTerms, classSchedules, classBookings, classAttendance, classNotifications };
 }
 
 export async function restoreAllData(data) {
   const students = Array.isArray(data?.students) ? data.students : [];
   const tokens = Array.isArray(data?.tokens) ? data.tokens : [];
   const settings = Array.isArray(data?.settings) ? data.settings : [];
+  const academicTerms = Array.isArray(data?.academicTerms) ? data.academicTerms : [];
+  const classSchedules = Array.isArray(data?.classSchedules) ? data.classSchedules : [];
+  const classBookings = Array.isArray(data?.classBookings) ? data.classBookings : [];
+  const classAttendance = Array.isArray(data?.classAttendance) ? data.classAttendance : [];
+  const classNotifications = Array.isArray(data?.classNotifications) ? data.classNotifications : [];
 
   if (supabase) {
+    for (const table of ['class_notifications', 'class_attendance', 'class_bookings', 'class_schedules', 'academic_terms']) {
+      const { error } = await supabase.from(table).delete().not('id', 'is', null);
+      if (error) throw error;
+    }
     const { error: delTokens } = await supabase.from('access_tokens').delete().neq('id', '');
     if (delTokens) throw delTokens;
     const { error: delStudents } = await supabase.from('students').delete().neq('id', '');
@@ -614,23 +893,48 @@ export async function restoreAllData(data) {
       await insertStudent({ ...s, flagged: Boolean(s.flagged), flag_note: s.flag_note || '' });
     }
     for (const t of tokens) await insertToken(t);
+    for (const term of academicTerms) await saveAcademicTerm(term);
+    for (const classSchedule of classSchedules) await saveClassSchedule(classSchedule);
+    for (const booking of classBookings) {
+      const { error } = await supabase.from('class_bookings').insert(booking);
+      if (error) throw error;
+    }
+    if (classAttendance.length) {
+      const { error } = await supabase.from('class_attendance').insert(classAttendance);
+      if (error) throw error;
+    }
+    if (classNotifications.length) {
+      const { error } = await supabase.from('class_notifications').insert(classNotifications);
+      if (error) throw error;
+    }
     for (const k of settings) await setSetting(k.key, k.value);
-    return { students: students.length, tokens: tokens.length, settings: settings.length };
+    return {
+      students: students.length, tokens: tokens.length, settings: settings.length,
+      academicTerms: academicTerms.length, classSchedules: classSchedules.length,
+      classBookings: classBookings.length, classAttendance: classAttendance.length,
+      classNotifications: classNotifications.length
+    };
   }
 
   const run = sqlite.transaction(() => {
+    sqlite.prepare('DELETE FROM class_notifications').run();
+    sqlite.prepare('DELETE FROM class_attendance').run();
+    sqlite.prepare('DELETE FROM class_bookings').run();
+    sqlite.prepare('DELETE FROM class_schedules').run();
+    sqlite.prepare('DELETE FROM academic_terms').run();
     sqlite.prepare('DELETE FROM access_tokens').run();
     sqlite.prepare('DELETE FROM students').run();
     sqlite.prepare('DELETE FROM settings').run();
 
-    const insertStudentStmt = sqlite.prepare(`INSERT INTO students (id, name, phone, purpose, campus, created_at, flagged, flag_note, sms_opt_out)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const insertStudentStmt = sqlite.prepare(`INSERT INTO students (id, name, phone, purpose, date_of_birth, campus, created_at, flagged, flag_note, sms_opt_out)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     for (const s of students) {
       insertStudentStmt.run(
         s.id,
         s.name,
         s.phone,
         s.purpose || '',
+        s.date_of_birth || null,
         s.campus || 'TESANO CAMPUS',
         s.created_at,
         s.flagged ? 1 : 0,
@@ -654,6 +958,45 @@ export async function restoreAllData(data) {
       );
     }
 
+    const insertTermStmt = sqlite.prepare(`INSERT INTO academic_terms
+      (id, campus, name, start_date, end_date, status, created_at, updated_at)
+      VALUES (@id, @campus, @name, @start_date, @end_date, @status, @created_at, @updated_at)`);
+    for (const term of academicTerms) insertTermStmt.run(term);
+
+    const insertClassStmt = sqlite.prepare(`INSERT INTO class_schedules (
+      id, term_id, campus, title, description, day_of_week, start_time, end_time,
+      classroom, capacity, instructor, status, created_at, updated_at
+    ) VALUES (
+      @id, @term_id, @campus, @title, @description, @day_of_week, @start_time, @end_time,
+      @classroom, @capacity, @instructor, @status, @created_at, @updated_at
+    )`);
+    for (const classSchedule of classSchedules) insertClassStmt.run(classSchedule);
+
+    const insertBookingStmt = sqlite.prepare(`INSERT INTO class_bookings (
+      id, class_id, student_id, campus, class_date, status, class_title_snapshot,
+      description_snapshot, day_of_week_snapshot, start_time_snapshot, end_time_snapshot,
+      classroom_snapshot, instructor_snapshot, created_at, updated_at
+    ) VALUES (
+      @id, @class_id, @student_id, @campus, @class_date, @status, @class_title_snapshot,
+      @description_snapshot, @day_of_week_snapshot, @start_time_snapshot, @end_time_snapshot,
+      @classroom_snapshot, @instructor_snapshot, @created_at, @updated_at
+    )`);
+    for (const booking of classBookings) insertBookingStmt.run(booking);
+
+    const insertAttendanceStmt = sqlite.prepare(`INSERT INTO class_attendance (
+      id, booking_id, class_id, student_id, class_date, status, verified_by, verified_at
+    ) VALUES (
+      @id, @booking_id, @class_id, @student_id, @class_date, @status, @verified_by, @verified_at
+    )`);
+    for (const attendance of classAttendance) insertAttendanceStmt.run(attendance);
+
+    const insertNotificationStmt = sqlite.prepare(`INSERT INTO class_notifications (
+      id, booking_id, student_id, event, status, provider, provider_message_id, error, created_at
+    ) VALUES (
+      @id, @booking_id, @student_id, @event, @status, @provider, @provider_message_id, @error, @created_at
+    )`);
+    for (const notification of classNotifications) insertNotificationStmt.run(notification);
+
     const insertSettingStmt = sqlite.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
     for (const k of settings) {
       if (k && k.key) insertSettingStmt.run(k.key, k.value);
@@ -662,7 +1005,12 @@ export async function restoreAllData(data) {
   run();
 
   settingsCache = new Map(settings.filter(k => k && k.key).map(row => [row.key, row.value]));
-  return { students: students.length, tokens: tokens.length, settings: settings.length };
+  return {
+    students: students.length, tokens: tokens.length, settings: settings.length,
+    academicTerms: academicTerms.length, classSchedules: classSchedules.length,
+    classBookings: classBookings.length, classAttendance: classAttendance.length,
+    classNotifications: classNotifications.length
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1336,6 +1684,548 @@ export async function cancelRetentionSchedule(id, campus) {
   const result = sqlite.prepare(`UPDATE retention_schedules SET status = 'cancelled', updated_at = ?
     WHERE id = ? AND status = 'scheduled'${whereCampus}`).run(...params);
   return result.changes === 1;
+}
+
+// ---------------------------------------------------------------------------
+// Academic timetable, bookings, and class attendance (separate from access_tokens)
+// ---------------------------------------------------------------------------
+export async function listAcademicTerms(campus) {
+  if (supabase) {
+    let query = supabase.from('academic_terms').select('*').order('start_date', { ascending: false });
+    if (campus) query = query.eq('campus', campus);
+    const { data, error } = await query;
+    if (error) throw new Error(`Supabase academic terms query failed: ${error.message}`);
+    return data || [];
+  }
+  const where = campus ? 'WHERE campus = ?' : '';
+  return sqlite.prepare(`SELECT * FROM academic_terms ${where} ORDER BY start_date DESC`).all(...(campus ? [campus] : []));
+}
+
+export async function getAcademicTerm(id, campus) {
+  if (supabase) {
+    let query = supabase.from('academic_terms').select('*').eq('id', id);
+    if (campus) query = query.eq('campus', campus);
+    const { data, error } = await query.maybeSingle();
+    if (error) throw new Error(`Supabase academic term lookup failed: ${error.message}`);
+    return data || null;
+  }
+  const whereCampus = campus ? ' AND campus = ?' : '';
+  return sqlite.prepare(`SELECT * FROM academic_terms WHERE id = ?${whereCampus}`).get(...(campus ? [id, campus] : [id])) || null;
+}
+
+export async function saveAcademicTerm(term) {
+  if (supabase) {
+    const { error } = await supabase.from('academic_terms').upsert(term, { onConflict: 'id' });
+    if (error) throw new Error(`Supabase academic term save failed: ${error.message}`);
+    return term;
+  }
+  sqlite.prepare(`INSERT INTO academic_terms (id, campus, name, start_date, end_date, status, created_at, updated_at)
+    VALUES (@id, @campus, @name, @start_date, @end_date, @status, @created_at, @updated_at)
+    ON CONFLICT(id) DO UPDATE SET campus = excluded.campus, name = excluded.name,
+    start_date = excluded.start_date, end_date = excluded.end_date, status = excluded.status,
+    updated_at = excluded.updated_at`).run(term);
+  return term;
+}
+
+export async function setOtherTermsInactive(campus, exceptId, updatedAt) {
+  if (supabase) {
+    const { error } = await supabase.from('academic_terms')
+      .update({ status: 'inactive', updated_at: updatedAt })
+      .eq('campus', campus).eq('status', 'active').neq('id', exceptId);
+    if (error) throw new Error(`Supabase term deactivation failed: ${error.message}`);
+    return;
+  }
+  sqlite.prepare(`UPDATE academic_terms SET status = 'inactive', updated_at = ?
+    WHERE campus = ? AND status = 'active' AND id != ?`).run(updatedAt, campus, exceptId);
+}
+
+export async function listClassSchedules(campus, termId) {
+  if (supabase) {
+    let query = supabase.from('class_schedules').select('*').order('day_of_week').order('start_time');
+    if (campus) query = query.eq('campus', campus);
+    if (termId) query = query.eq('term_id', termId);
+    const { data, error } = await query;
+    if (error) throw new Error(`Supabase class schedule query failed: ${error.message}`);
+    return data || [];
+  }
+  const filters = [];
+  const params = [];
+  if (campus) {
+    filters.push('campus = ?');
+    params.push(campus);
+  }
+  if (termId) {
+    filters.push('term_id = ?');
+    params.push(termId);
+  }
+  return sqlite.prepare(`SELECT * FROM class_schedules ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
+    ORDER BY day_of_week, start_time`).all(...params);
+}
+
+export async function getClassSchedule(id, campus) {
+  if (supabase) {
+    let query = supabase.from('class_schedules').select('*').eq('id', id);
+    if (campus) query = query.eq('campus', campus);
+    const { data, error } = await query.maybeSingle();
+    if (error) throw new Error(`Supabase class lookup failed: ${error.message}`);
+    return data || null;
+  }
+  const whereCampus = campus ? ' AND campus = ?' : '';
+  return sqlite.prepare(`SELECT * FROM class_schedules WHERE id = ?${whereCampus}`).get(...(campus ? [id, campus] : [id])) || null;
+}
+
+export async function saveClassSchedule(classSchedule) {
+  if (supabase) {
+    const { error } = await supabase.from('class_schedules').upsert(classSchedule, { onConflict: 'id' });
+    if (error) throw new Error(`Supabase class schedule save failed: ${error.message}`);
+    return classSchedule;
+  }
+  sqlite.prepare(`INSERT INTO class_schedules (
+    id, term_id, campus, title, description, day_of_week, start_time, end_time,
+    classroom, capacity, instructor, status, created_at, updated_at
+  ) VALUES (
+    @id, @term_id, @campus, @title, @description, @day_of_week, @start_time, @end_time,
+    @classroom, @capacity, @instructor, @status, @created_at, @updated_at
+  ) ON CONFLICT(id) DO UPDATE SET
+    term_id = excluded.term_id, campus = excluded.campus, title = excluded.title,
+    description = excluded.description, day_of_week = excluded.day_of_week,
+    start_time = excluded.start_time, end_time = excluded.end_time, classroom = excluded.classroom,
+    capacity = excluded.capacity, instructor = excluded.instructor, status = excluded.status,
+    updated_at = excluded.updated_at`).run(classSchedule);
+  return classSchedule;
+}
+
+const INITIAL_CLASS_SCHEDULES = [
+  { title: 'Family Home Evening', day_of_week: 1, start_time: '18:30', classroom: 'MPR' },
+  { title: 'Foundations of the Restoration', day_of_week: 2, start_time: '10:00', classroom: 'MPR' },
+  { title: 'Master the Job Market', day_of_week: 2, start_time: '14:00', classroom: 'CR' },
+  { title: 'Scripture Study', day_of_week: 2, start_time: '14:00', classroom: 'MPR' },
+  { title: 'Piano Class', day_of_week: 2, start_time: '18:30', classroom: 'CR' },
+  { title: 'My Covenant My Joy', day_of_week: 2, start_time: '18:30', classroom: 'MPR' },
+  { title: 'Breakfast with the Prophet', day_of_week: 3, start_time: '10:00', classroom: 'MPR' },
+  { title: 'Writings of John the Beloved', day_of_week: 3, start_time: '14:00', classroom: 'MPR' },
+  { title: 'Learn a New Language', day_of_week: 3, start_time: '18:30', classroom: 'CR' },
+  { title: 'Sacred Hymns', day_of_week: 3, start_time: '18:30', classroom: 'MPR' },
+  { title: 'The Power to Become', day_of_week: 4, start_time: '10:00', classroom: 'MPR' },
+  { title: 'Money Habits for Life', day_of_week: 4, start_time: '14:00', classroom: 'MPR' },
+  { title: 'Games', day_of_week: 4, start_time: '14:00', classroom: 'CR' },
+  { title: 'Teachings & Doctrines of the Book of Mormon, PathwayConnect', day_of_week: 4, start_time: '18:30', classroom: 'MPR' },
+  { title: 'Eternal Family', day_of_week: 5, start_time: '10:00', classroom: 'MPR' },
+  { title: 'Jesus Christ & His Everlasting Gospel', day_of_week: 5, start_time: '14:00', classroom: 'MPR' },
+  { title: 'Women in the Scriptures', day_of_week: 5, start_time: '14:00', classroom: 'CR' },
+  { title: 'Mission Preparation', day_of_week: 5, start_time: '18:30', classroom: 'CR' },
+  { title: 'Connect & Play', day_of_week: 5, start_time: '18:30', classroom: 'MPR' }
+];
+
+export async function seedInitialTimetables(campuses) {
+  const activeDateParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Accra',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+  const dateValues = Object.fromEntries(activeDateParts.map(({ type, value }) => [type, value]));
+  const startDate = `${dateValues.year}-${dateValues.month}-${dateValues.day}`;
+  const endDateValue = new Date(`${startDate}T00:00:00.000Z`);
+  endDateValue.setUTCFullYear(endDateValue.getUTCFullYear() + 2);
+  const endDate = endDateValue.toISOString().slice(0, 10);
+  const timestamp = new Date().toISOString();
+
+  for (const campus of campuses) {
+    const terms = await listAcademicTerms(campus);
+    if (terms.some((term) => term.id !== `initial-term-${campus.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`)) continue;
+
+    const termId = `initial-term-${campus.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    if (!terms.some((term) => term.id === termId)) {
+      await saveAcademicTerm({
+        id: termId,
+        campus,
+        name: 'Initial Academic Term',
+        start_date: startDate,
+        end_date: endDate,
+        status: 'active',
+        created_at: timestamp,
+        updated_at: timestamp
+      });
+    }
+
+    for (const [index, classSeed] of INITIAL_CLASS_SCHEDULES.entries()) {
+      const id = `initial-class-${campus.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${index + 1}`;
+      if (await getClassSchedule(id, campus)) continue;
+      const [hour, minute] = classSeed.start_time.split(':').map(Number);
+      const endMinutes = (hour * 60 + minute + 60) % (24 * 60);
+      const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
+      await saveClassSchedule({
+        id,
+        term_id: termId,
+        campus,
+        ...classSeed,
+        description: '',
+        end_time: endTime,
+        capacity: 100,
+        instructor: '',
+        status: 'published',
+        created_at: timestamp,
+        updated_at: timestamp
+      });
+    }
+  }
+}
+
+export async function createClassBooking(booking, today) {
+  if (supabase) {
+    const { data, error } = await supabase.rpc('create_class_booking', {
+      p_id: booking.id,
+      p_class_id: booking.class_id,
+      p_student_id: booking.student_id,
+      p_class_date: booking.class_date,
+      p_today: today,
+      p_created_at: booking.created_at
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  const transaction = sqlite.transaction(() => {
+    const schedule = sqlite.prepare('SELECT * FROM class_schedules WHERE id = ?').get(booking.class_id);
+    const term = schedule && sqlite.prepare('SELECT * FROM academic_terms WHERE id = ?').get(schedule.term_id);
+    if (!schedule || schedule.status !== 'published' || !term || term.status !== 'active') {
+      throw new Error('Class is not open for booking');
+    }
+    if (booking.class_date < today || booking.class_date < term.start_date || booking.class_date > term.end_date ||
+        new Date(`${booking.class_date}T00:00:00.000Z`).getUTCDay() !== schedule.day_of_week) {
+      throw new Error('Class date is outside the schedule');
+    }
+    const bookedCount = sqlite.prepare(`SELECT COUNT(*) AS count FROM class_bookings
+      WHERE class_id = ? AND class_date = ? AND status = 'booked'`).get(schedule.id, booking.class_date).count;
+    if (bookedCount >= schedule.capacity) throw new Error('Class is full');
+    const row = {
+      ...booking,
+      campus: schedule.campus,
+      class_title_snapshot: schedule.title,
+      description_snapshot: schedule.description,
+      day_of_week_snapshot: schedule.day_of_week,
+      start_time_snapshot: schedule.start_time,
+      end_time_snapshot: schedule.end_time,
+      classroom_snapshot: schedule.classroom,
+      instructor_snapshot: schedule.instructor
+    };
+    sqlite.prepare(`INSERT INTO class_bookings (
+      id, class_id, student_id, campus, class_date, status, class_title_snapshot, description_snapshot,
+      day_of_week_snapshot, start_time_snapshot, end_time_snapshot, classroom_snapshot,
+      instructor_snapshot, created_at, updated_at
+    ) VALUES (
+      @id, @class_id, @student_id, @campus, @class_date, @status, @class_title_snapshot, @description_snapshot,
+      @day_of_week_snapshot, @start_time_snapshot, @end_time_snapshot, @classroom_snapshot,
+      @instructor_snapshot, @created_at, @updated_at
+    )`).run(row);
+    return row;
+  });
+  return transaction();
+}
+
+export async function countActiveClassBookings(classId, classDate) {
+  if (supabase) {
+    const { count, error } = await supabase.from('class_bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('class_id', classId).eq('class_date', classDate).eq('status', 'booked');
+    if (error) throw new Error(`Supabase class capacity query failed: ${error.message}`);
+    return count || 0;
+  }
+  return sqlite.prepare(`SELECT COUNT(*) AS count FROM class_bookings
+    WHERE class_id = ? AND class_date = ? AND status = 'booked'`).get(classId, classDate).count;
+}
+
+export async function getClassAttendanceAnalytics(campus, startDate, endDate) {
+  if (supabase) {
+    const { data, error } = await supabase.rpc('get_class_attendance_analytics', {
+      p_campus: campus,
+      p_start_date: startDate,
+      p_end_date: endDate
+    });
+    if (error) throw new Error(`Supabase class attendance analytics failed: ${error.message}`);
+    return data;
+  }
+
+  const sessions = sqlite.prepare(`SELECT
+      b.class_id,
+      b.class_title_snapshot AS title,
+      b.class_date,
+      c.capacity,
+      COUNT(*) AS registrations,
+      SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS attended,
+      SUM(CASE WHEN a.status = 'absent' THEN 1 ELSE 0 END) AS absent
+    FROM class_bookings b
+    JOIN class_schedules c ON c.id = b.class_id
+    LEFT JOIN class_attendance a ON a.booking_id = b.id
+    WHERE b.campus = ? AND b.class_date BETWEEN ? AND ? AND b.status = 'booked'
+    GROUP BY b.class_id, b.class_title_snapshot, b.class_date, c.capacity
+    ORDER BY b.class_date, b.class_title_snapshot`).all(campus, startDate, endDate);
+  const scheduledClasses = sqlite.prepare(`SELECT c.day_of_week, c.capacity,
+      t.start_date, t.end_date
+    FROM class_schedules c
+    JOIN academic_terms t ON t.id = c.term_id
+    WHERE c.campus = ? AND c.status = 'published'
+      AND t.start_date <= ? AND t.end_date >= ?`).all(campus, endDate, startDate);
+  let totalCapacity = 0;
+  for (const scheduledClass of scheduledClasses) {
+    const firstDate = scheduledClass.start_date > startDate ? scheduledClass.start_date : startDate;
+    const lastDate = scheduledClass.end_date < endDate ? scheduledClass.end_date : endDate;
+    const occurrence = new Date(`${firstDate}T00:00:00.000Z`);
+    const offset = (scheduledClass.day_of_week - occurrence.getUTCDay() + 7) % 7;
+    occurrence.setUTCDate(occurrence.getUTCDate() + offset);
+    while (occurrence.toISOString().slice(0, 10) <= lastDate) {
+      totalCapacity += scheduledClass.capacity;
+      occurrence.setUTCDate(occurrence.getUTCDate() + 7);
+    }
+  }
+  const classes = new Map();
+  const days = new Map();
+  const summary = { totalBookings: 0, attended: 0, absent: 0, pending: 0, capacity: totalCapacity };
+  sessions.forEach((session) => {
+    const pending = session.registrations - session.attended - session.absent;
+    summary.totalBookings += session.registrations;
+    summary.attended += session.attended;
+    summary.absent += session.absent;
+    summary.pending += pending;
+
+    const classStats = classes.get(session.class_id) || {
+      class_id: session.class_id,
+      title: session.title,
+      registrations: 0,
+      attended: 0,
+      absent: 0
+    };
+    classStats.registrations += session.registrations;
+    classStats.attended += session.attended;
+    classStats.absent += session.absent;
+    classes.set(session.class_id, classStats);
+
+    const day = days.get(session.class_date) || {
+      date: session.class_date,
+      registrations: 0,
+      attended: 0,
+      absent: 0,
+      pending: 0
+    };
+    day.registrations += session.registrations;
+    day.attended += session.attended;
+    day.absent += session.absent;
+    day.pending += pending;
+    days.set(session.class_date, day);
+  });
+
+  const repeatAbsences = sqlite.prepare(`SELECT
+      a.student_id,
+      s.name,
+      s.phone,
+      COUNT(*) AS absence_count
+    FROM class_attendance a
+    JOIN class_bookings b ON b.id = a.booking_id
+    JOIN students s ON s.id = a.student_id
+    WHERE b.campus = ? AND a.class_date BETWEEN ? AND ? AND a.status = 'absent'
+    GROUP BY a.student_id, s.name, s.phone
+    HAVING COUNT(*) >= 2
+    ORDER BY absence_count DESC, s.name`).all(campus, startDate, endDate);
+
+  const decidedAttendance = summary.attended + summary.absent;
+  return {
+    summary: {
+      ...summary,
+      attendanceRate: decidedAttendance ? Math.round((summary.attended / decidedAttendance) * 1000) / 10 : 0,
+      capacityUtilization: summary.capacity ? Math.round((summary.totalBookings / summary.capacity) * 1000) / 10 : 0
+    },
+    classes: [...classes.values()].sort((first, second) =>
+      second.registrations - first.registrations || first.title.localeCompare(second.title)
+    ),
+    dailyTrends: [...days.values()],
+    repeatAbsences
+  };
+}
+
+export async function listClassBookings({ campus, classId, classDate, studentId, status, bookingId } = {}) {
+  let rows;
+  if (supabase) {
+    let query = supabase.from('class_bookings').select('*').order('class_date').order('start_time_snapshot');
+    if (campus) query = query.eq('campus', campus);
+    if (classId) query = query.eq('class_id', classId);
+    if (classDate) query = query.eq('class_date', classDate);
+    if (studentId) query = query.eq('student_id', studentId);
+    if (status) query = query.eq('status', status);
+    if (bookingId) query = query.eq('id', bookingId);
+    const { data, error } = await query;
+    if (error) throw new Error(`Supabase class booking query failed: ${error.message}`);
+    rows = data || [];
+  } else {
+    const filters = [];
+    const params = [];
+    if (campus) {
+      filters.push('c.campus = ?');
+      params.push(campus);
+    }
+    if (classId) {
+      filters.push('b.class_id = ?');
+      params.push(classId);
+    }
+    if (classDate) {
+      filters.push('b.class_date = ?');
+      params.push(classDate);
+    }
+    if (studentId) {
+      filters.push('b.student_id = ?');
+      params.push(studentId);
+    }
+    if (status) {
+      filters.push('b.status = ?');
+      params.push(status);
+    }
+    if (bookingId) {
+      filters.push('b.id = ?');
+      params.push(bookingId);
+    }
+    rows = sqlite.prepare(`SELECT b.*, c.campus, s.name AS student_name, s.phone AS student_phone,
+      s.sms_opt_out AS student_sms_opt_out
+      FROM class_bookings b
+      JOIN class_schedules c ON c.id = b.class_id
+      JOIN students s ON s.id = b.student_id
+      ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
+      ORDER BY b.class_date, b.start_time_snapshot`).all(...params);
+  }
+
+  if (!rows.length) return [];
+  const bookingIds = rows.map((row) => row.id);
+  const studentIds = [...new Set(rows.map((row) => row.student_id))];
+  if (supabase) {
+    const [studentsResult, attendanceResult, notificationsResult] = await Promise.all([
+      supabase.from('students').select('id,name,phone,sms_opt_out').in('id', studentIds),
+      supabase.from('class_attendance').select('*').in('booking_id', bookingIds),
+      supabase.from('class_notifications').select('*').in('booking_id', bookingIds).order('created_at', { ascending: false })
+    ]);
+    for (const result of [studentsResult, attendanceResult, notificationsResult]) {
+      if (result.error) throw new Error(`Supabase class booking details query failed: ${result.error.message}`);
+    }
+    const students = new Map((studentsResult.data || []).map((row) => [row.id, row]));
+    const attendance = new Map((attendanceResult.data || []).map((row) => [row.booking_id, row]));
+    const notifications = new Map();
+    (notificationsResult.data || []).forEach((row) => {
+      const current = notifications.get(row.booking_id) || [];
+      current.push(row);
+      notifications.set(row.booking_id, current);
+    });
+    return rows.map((row) => ({
+      ...row,
+      ...(students.get(row.student_id) ? {
+        student_name: students.get(row.student_id).name,
+        student_phone: students.get(row.student_id).phone,
+        student_sms_opt_out: Boolean(students.get(row.student_id).sms_opt_out)
+      } : {}),
+      attendance: attendance.get(row.id) || null,
+      notifications: notifications.get(row.id) || []
+    }));
+  }
+
+  const attendanceRows = sqlite.prepare(`SELECT * FROM class_attendance WHERE booking_id IN (${bookingIds.map(() => '?').join(',')})`).all(...bookingIds);
+  const notificationRows = sqlite.prepare(`SELECT * FROM class_notifications WHERE booking_id IN (${bookingIds.map(() => '?').join(',')}) ORDER BY created_at DESC`).all(...bookingIds);
+  const attendance = new Map(attendanceRows.map((row) => [row.booking_id, row]));
+  const notifications = new Map();
+  notificationRows.forEach((row) => {
+    const current = notifications.get(row.booking_id) || [];
+    current.push(row);
+    notifications.set(row.booking_id, current);
+  });
+  return rows.map((row) => ({
+    ...row,
+    student_sms_opt_out: Boolean(row.student_sms_opt_out),
+    attendance: attendance.get(row.id) || null,
+    notifications: notifications.get(row.id) || []
+  }));
+}
+
+export async function updateFutureClassBookings(classId, status, today, updatedAt) {
+  const affected = await listClassBookings({ classId, status: 'booked' });
+  const rows = affected.filter((row) => row.class_date >= today);
+  if (!rows.length) return [];
+  const ids = rows.map((row) => row.id);
+  if (supabase) {
+    const { error } = await supabase.from('class_bookings').update({ status, updated_at: updatedAt }).in('id', ids);
+    if (error) throw new Error(`Supabase booking update failed: ${error.message}`);
+  } else {
+    const update = sqlite.prepare('UPDATE class_bookings SET status = ?, updated_at = ? WHERE id = ? AND status = ?');
+    const transaction = sqlite.transaction(() => ids.forEach((id) => update.run(status, updatedAt, id, 'booked')));
+    transaction();
+  }
+  return rows;
+}
+
+export async function cancelClassBooking(id, studentId, updatedAt) {
+  if (supabase) {
+    const { data, error } = await supabase.from('class_bookings')
+      .update({ status: 'cancelled', updated_at: updatedAt })
+      .eq('id', id).eq('student_id', studentId).eq('status', 'booked')
+      .select('*').maybeSingle();
+    if (error) throw new Error(`Supabase booking cancellation failed: ${error.message}`);
+    return data || null;
+  }
+  const result = sqlite.prepare(`UPDATE class_bookings SET status = 'cancelled', updated_at = ?
+    WHERE id = ? AND student_id = ? AND status = 'booked'`).run(updatedAt, id, studentId);
+  if (!result.changes) return null;
+  return sqlite.prepare('SELECT * FROM class_bookings WHERE id = ?').get(id) || null;
+}
+
+export async function markClassBookingCalendarAdded(id, studentId, campus, addedAt) {
+  if (supabase) {
+    const { data, error } = await supabase.from('class_bookings')
+      .update({ calendar_added_at: addedAt })
+      .eq('id', id).eq('student_id', studentId).eq('campus', campus)
+      .eq('status', 'booked').is('calendar_added_at', null)
+      .select('id').maybeSingle();
+    if (error) throw new Error(`Supabase calendar click tracking failed: ${error.message}`);
+    return Boolean(data);
+  }
+  const result = sqlite.prepare(`UPDATE class_bookings SET calendar_added_at = ?
+    WHERE id = ? AND student_id = ? AND campus = ? AND status = 'booked'
+      AND calendar_added_at IS NULL`).run(addedAt, id, studentId, campus);
+  return result.changes === 1;
+}
+
+export async function saveClassAttendance(attendance) {
+  if (supabase) {
+    const { error } = await supabase.from('class_attendance').upsert(attendance, { onConflict: 'booking_id' });
+    if (error) throw new Error(`Supabase class attendance save failed: ${error.message}`);
+    return attendance;
+  }
+  sqlite.prepare(`INSERT INTO class_attendance (
+    id, booking_id, class_id, student_id, class_date, status, verified_by, verified_at
+  ) VALUES (
+    @id, @booking_id, @class_id, @student_id, @class_date, @status, @verified_by, @verified_at
+  ) ON CONFLICT(booking_id) DO UPDATE SET status = excluded.status,
+    verified_by = excluded.verified_by, verified_at = excluded.verified_at`).run(attendance);
+  return attendance;
+}
+
+export async function insertClassNotification(notification) {
+  if (supabase) {
+    const { error } = await supabase.from('class_notifications').insert(notification);
+    if (error) throw new Error(`Supabase class notification log failed: ${error.message}`);
+    return notification;
+  }
+  sqlite.prepare(`INSERT INTO class_notifications (
+    id, booking_id, student_id, event, status, provider, provider_message_id, error, created_at
+  ) VALUES (
+    @id, @booking_id, @student_id, @event, @status, @provider, @provider_message_id, @error, @created_at
+  )`).run(notification);
+  return notification;
+}
+
+export async function countClassBookingsForStudent(studentId) {
+  if (supabase) {
+    const { count, error } = await supabase.from('class_bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('student_id', studentId);
+    if (error) throw new Error(`Supabase student class history lookup failed: ${error.message}`);
+    return count || 0;
+  }
+  return sqlite.prepare('SELECT COUNT(*) AS count FROM class_bookings WHERE student_id = ?').get(studentId).count;
 }
 
 export function closeDatabase() {

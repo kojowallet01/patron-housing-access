@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Entrance from './pages/Entrance'
 import AccessQR from './pages/AccessQR'
 import RegisterPage from './pages/RegisterPage'
+import StudentClasses from './pages/Classes'
 import Security from './pages/Security'
 import Home from './pages/Home'
 import CampusSelector from './pages/CampusSelector'
@@ -14,6 +15,7 @@ import Students from './pages/admin/Students'
 import Visitors from './pages/admin/Visitors'
 import Retention from './pages/admin/Retention'
 import PasswordManager from './pages/admin/PasswordManager'
+import AdminClasses from './pages/admin/Classes'
 import Reports from './pages/admin/Reports'
 import Settings from './pages/admin/Settings'
 import DailySignups from './pages/reports/DailySignups'
@@ -68,6 +70,7 @@ function App() {
         <Routes>
         <Route path="/home" element={<Home />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/classes" element={<StudentClasses />} />
         <Route
           path="/security"
           element={(
@@ -97,6 +100,7 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="students" element={<Students />} />
           <Route path="visitors" element={<Visitors />} />
+          <Route path="classes" element={<AdminClasses />} />
           <Route path="retention" element={<Retention />} />
           <Route path="security" element={<PasswordManager />} />
           <Route path="reports" element={<Reports />} />

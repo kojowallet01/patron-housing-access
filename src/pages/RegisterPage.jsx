@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { API_URL, CAMPUS_INSTITUTE_NAME, DEFAULT_CAMPUS } from '../config'
+import { downloadCalendarInvite, getCalendarLinks } from '../calendar'
 
 function formatVisitDate(iso) {
   const date = new Date(iso)
@@ -18,11 +20,35 @@ const FEEDBACK_TAGS = [
   'Helpful Staff'
 ]
 
+const CLASS_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+function accraDateString() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Accra',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function nextClassDate(dayOfWeek, termStart, termEnd) {
+  const today = accraDateString()
+  const date = new Date(`${termStart > today ? termStart : today}T00:00:00.000Z`)
+  for (let attempt = 0; attempt < 8 && date.toISOString().slice(0, 10) <= termEnd; attempt += 1) {
+    if (date.getUTCDay() === dayOfWeek) return date.toISOString().slice(0, 10)
+    date.setUTCDate(date.getUTCDate() + 1)
+  }
+  return ''
+}
+
 function RegisterPage() {
   const [mode, setMode] = useState('quick') // 'quick' (returning) or 'new' (first-time)
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
+    dateOfBirth: '',
     purpose: 'Personal Study',
     purposeOther: ''
   })
@@ -34,6 +60,14 @@ function RegisterPage() {
   const [statusMessage, setStatusMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [classTerm, setClassTerm] = useState(null)
+  const [classSchedules, setClassSchedules] = useState([])
+  const [classScheduleError, setClassScheduleError] = useState('')
+  const [classDates, setClassDates] = useState({})
+  const [classAvailability, setClassAvailability] = useState({})
+  const [selectedClassBookings, setSelectedClassBookings] = useState({})
+  const [classesLoading, setClassesLoading] = useState(false)
+  const [selectedClassDay, setSelectedClassDay] = useState(null)
 
   // Feedback state
   const [feedbackRating, setFeedbackRating] = useState(0)
@@ -80,6 +114,84 @@ function RegisterPage() {
 
     setError('Invalid registration link. Please scan the QR code at the entrance.')
   }, [])
+
+  useEffect(() => {
+    let active = true
+    setClassesLoading(true)
+    fetch(`${API_URL}/classes?campus=${encodeURIComponent(campusName)}`)
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to load available classes.')
+        if (!active) return
+        const schedules = data.classes || []
+        setClassTerm(data.term || null)
+        setClassSchedules(schedules)
+        setClassScheduleError('')
+        setSelectedClassDay((current) => {
+          if (current !== null && schedules.some((schedule) => schedule.day_of_week === current)) {
+            return current
+          }
+          return schedules
+            .map((schedule) => ({
+              day: schedule.day_of_week,
+              date: data.term
+                ? nextClassDate(schedule.day_of_week, data.term.start_date, data.term.end_date)
+                : ''
+            }))
+            .filter(({ date }) => date)
+            .sort((a, b) => a.date.localeCompare(b.date))[0]?.day ?? schedules[0]?.day_of_week ?? null
+        })
+        const availableIds = new Set(schedules.map((classSchedule) => classSchedule.id))
+        setSelectedClassBookings((current) => Object.fromEntries(
+          Object.entries(current).filter(([classId, selected]) => availableIds.has(classId) && selected)
+        ))
+        setClassDates((current) => Object.fromEntries(schedules.map((classSchedule) => [
+          classSchedule.id,
+          current[classSchedule.id] || (data.term
+            ? nextClassDate(classSchedule.day_of_week, data.term.start_date, data.term.end_date)
+            : '')
+        ])))
+      })
+      .catch((loadError) => {
+        if (active) {
+          setClassScheduleError(loadError.message)
+          setError(loadError.message)
+        }
+      })
+      .finally(() => {
+        if (active) setClassesLoading(false)
+      })
+    return () => { active = false }
+  }, [campusName])
+
+  useEffect(() => {
+    let active = true
+    classSchedules
+      .filter((classSchedule) =>
+        classSchedule.day_of_week === selectedClassDay || selectedClassBookings[classSchedule.id]
+      )
+      .forEach(async (classSchedule) => {
+      const classDate = classDates[classSchedule.id]
+      if (!classDate) return
+      const query = new URLSearchParams({
+        campus: campusName,
+        class_id: classSchedule.id,
+        date: classDate
+      })
+      try {
+        const response = await fetch(`${API_URL}/classes/availability?${query}`)
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to check class availability.')
+        if (active) setClassAvailability((current) => ({ ...current, [`${classSchedule.id}:${classDate}`]: data }))
+      } catch (availabilityError) {
+        if (active) setClassAvailability((current) => ({
+          ...current,
+          [`${classSchedule.id}:${classDate}`]: { available: false, reason: availabilityError.message }
+        }))
+      }
+    })
+    return () => { active = false }
+  }, [campusName, classDates, classSchedules, selectedClassBookings, selectedClassDay])
 
   const requestToken = async (phone) => {
     const response = await fetch(`${API_URL}/generate-token`, {
@@ -146,6 +258,7 @@ function RegisterPage() {
     try {
       const name = formData.name.trim()
       const phone = formData.phone.trim()
+      const dateOfBirth = formData.dateOfBirth
       const purpose = formData.purpose === 'Other'
         ? formData.purposeOther.trim()
         : formData.purpose
@@ -166,8 +279,37 @@ function RegisterPage() {
         return
       }
 
+      if (!dateOfBirth || dateOfBirth > accraDateString()) {
+        setError('Enter a valid date of birth that is not in the future.')
+        setLoading(false)
+        return
+      }
+
       if (formData.purpose === 'Other' && !formData.purposeOther.trim()) {
         setError('Please specify the purpose of your visit.')
+        setLoading(false)
+        return
+      }
+
+      const classBookings = Object.entries(selectedClassBookings)
+        .filter(([, selected]) => selected)
+        .map(([classId]) => ({ classId, classDate: classDates[classId] }))
+      if (!classBookings.length) {
+        setError('Select at least one class session to complete registration.')
+        setLoading(false)
+        return
+      }
+      if (classBookings.some((booking) => !booking.classDate)) {
+        setError('Choose a valid date for every selected class.')
+        setLoading(false)
+        return
+      }
+      const unavailable = classBookings.find((booking) =>
+        classAvailability[`${booking.classId}:${booking.classDate}`]?.available !== true
+      )
+      if (unavailable) {
+        const status = classAvailability[`${unavailable.classId}:${unavailable.classDate}`]
+        setError(status?.reason || 'Wait for the selected class availability to load, then try again.')
         setLoading(false)
         return
       }
@@ -178,8 +320,10 @@ function RegisterPage() {
         body: JSON.stringify({
           name,
           phone,
+          date_of_birth: dateOfBirth,
           purpose,
-          campus: campusName
+          campus: campusName,
+          classBookings
         })
       })
 
@@ -191,7 +335,7 @@ function RegisterPage() {
         tokenData = await requestToken(phone)
       } else if (registerData.error?.includes('already registered')) {
         returning = true
-        setStatusMessage('Account recognized — generating your access code...')
+        setStatusMessage('Account recognized. Your class selections were not changed; use the class timetable to manage bookings.')
         tokenData = await requestToken(phone)
       } else {
         setError(registerData.error || 'Registration failed')
@@ -199,7 +343,7 @@ function RegisterPage() {
         return
       }
 
-      setToken({ ...tokenData, returning })
+      setToken({ ...tokenData, returning, classBookings: registerData.bookings || [] })
     } catch (err) {
       setError(err.message || 'Network error. Please try again.')
     } finally {
@@ -246,6 +390,45 @@ function RegisterPage() {
   const goBackHome = () => {
     window.location.href = '/'
   }
+  const recordCalendarSelection = async (booking) => {
+    const response = await fetch(`${API_URL}/classes/bookings/${booking.id}/calendar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: token?.student?.name || formData.name,
+        phone: token?.student?.phone || formData.phone,
+        campus: token?.campus || campusName
+      })
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Unable to record the calendar selection.')
+  }
+  const openCalendarLink = async (event, booking, url) => {
+    event.preventDefault()
+    const popup = window.open('about:blank', '_blank')
+    if (popup) popup.opener = null
+    try {
+      await recordCalendarSelection(booking)
+      setStatusMessage('Calendar option selected. Reminder delivery depends on your calendar app.')
+      if (popup) popup.location.href = url
+      else window.location.assign(url)
+    } catch (calendarError) {
+      popup?.close()
+      setError(calendarError.message)
+    }
+  }
+  const addBookingToCalendar = async (booking) => {
+    try {
+      await recordCalendarSelection(booking)
+      downloadCalendarInvite(booking, CAMPUS_INSTITUTE_NAME)
+      setStatusMessage('Calendar option selected. Reminder delivery depends on your calendar app.')
+    } catch (calendarError) {
+      setError(calendarError.message)
+    }
+  }
+  const earliestClassDate = classTerm
+    ? (classTerm.start_date > accraDateString() ? classTerm.start_date : accraDateString())
+    : accraDateString()
 
   if (token) {
     return (
@@ -286,11 +469,42 @@ function RegisterPage() {
             📱 <strong>Show this QR code or 4-digit code to security at the entrance.</strong>
           </div>
 
+          {statusMessage && <div className="alert alert-success">{statusMessage}</div>}
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
+
           <div className="token-details">
             <p><strong>Token Code</strong></p>
             <p className="token-id">{token.token}</p>
             <p className="valid-date">Valid for today: {new Date().toLocaleDateString()}</p>
           </div>
+
+          {token.classBookings?.length > 0 && (
+            <section className="registration-class-confirmation">
+              <h3>Class registration successful</h3>
+              <p>Your class booking is separate from this daily campus access code.</p>
+              {token.classBookings.map((booking) => (
+                <article className="registration-class-confirmation-item" key={booking.id}>
+                  <strong>{booking.class_title_snapshot}</strong>
+                  <span>{booking.class_date} · {booking.start_time_snapshot}–{booking.end_time_snapshot} · {booking.classroom_snapshot}</span>
+                  <div className="class-booking-buttons">
+                    {Object.entries(getCalendarLinks(booking, CAMPUS_INSTITUTE_NAME)).map(([provider, url]) => (
+                      <a
+                        key={provider}
+                        className="admin-btn admin-btn-secondary"
+                        href={url}
+                        onClick={(event) => openCalendarLink(event, booking, url)}
+                      >
+                        Add to {provider === 'google' ? 'Google Calendar' : 'Outlook'}
+                      </a>
+                    ))}
+                    <button type="button" className="admin-btn admin-btn-secondary" onClick={() => addBookingToCalendar(booking)}>
+                      Download ICS reminders
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </section>
+          )}
 
           {/* Patron Facility Experience Feedback Form */}
           <div className="feedback-card">
@@ -380,6 +594,10 @@ function RegisterPage() {
               Done / Back
             </button>
           </div>
+
+          <Link className="class-registration-link" to="/classes">
+            Manage your class bookings
+          </Link>
 
           <div className="token-tip">
             💡 Tip: Keep this page open or take a screenshot for faster checkpoint scanning.
@@ -485,8 +703,131 @@ function RegisterPage() {
         ) : (
           /* FIRST-TIME VISITOR REGISTRATION */
           <form onSubmit={handleNewSubmit} className="mobile-form">
+            <div className="form-group class-registration-picker">
+              <label>1. Choose your class session *</label>
+              <p className="field-description">
+                Pick a day to see its classes. This books a class only; campus entry still requires the normal daily access code and verification.
+              </p>
+              {classesLoading ? (
+                <p className="class-empty-state">Loading the active class timetable…</p>
+              ) : classScheduleError ? (
+                <p className="class-empty-state">
+                  Class registration is temporarily unavailable. The timetable database migration may need to be applied. Please contact an administrator.
+                </p>
+              ) : !classTerm ? (
+                <p className="class-empty-state">No active academic term is available for this campus. An administrator must activate a term before registration can continue.</p>
+              ) : classSchedules.length === 0 ? (
+                <p className="class-empty-state">There are no published classes available for registration.</p>
+              ) : (
+                <>
+                  <div className="class-registration-day-tabs" aria-label="Filter classes by day">
+                    {[...new Set(classSchedules.map((schedule) => schedule.day_of_week))]
+                      .sort((a, b) => a - b)
+                      .map((day) => (
+                        <button
+                          key={day}
+                          type="button"
+                          className={`class-registration-day-tab ${selectedClassDay === day ? 'active' : ''}`}
+                          aria-pressed={selectedClassDay === day}
+                          onClick={() => setSelectedClassDay(day)}
+                        >
+                          {CLASS_DAYS[day].slice(0, 3)}
+                          <span>{classSchedules.filter((schedule) => schedule.day_of_week === day).length}</span>
+                        </button>
+                      ))}
+                  </div>
+                  <p className="class-registration-selection-count" aria-live="polite">
+                    {Object.values(selectedClassBookings).filter(Boolean).length
+                      ? `${Object.values(selectedClassBookings).filter(Boolean).length} class session${Object.values(selectedClassBookings).filter(Boolean).length === 1 ? '' : 's'} selected`
+                      : 'Select at least one class to continue'}
+                  </p>
+                  {Object.entries(selectedClassBookings)
+                    .filter(([, selected]) => selected)
+                    .map(([classId]) => {
+                      const schedule = classSchedules.find((item) => item.id === classId)
+                      if (!schedule) return null
+                      return (
+                        <div className="class-registration-selected-item" key={classId}>
+                          {schedule.title} · {CLASS_DAYS[schedule.day_of_week]} · {classDates[classId]}
+                        </div>
+                      )
+                    })}
+                  <div className="class-registration-options">
+                    {classSchedules
+                      .filter((schedule) => schedule.day_of_week === selectedClassDay)
+                      .map((classSchedule) => {
+                        const availability = classAvailability[`${classSchedule.id}:${classDates[classSchedule.id]}`]
+                        return (
+                          <div
+                            className={`class-registration-option ${selectedClassBookings[classSchedule.id] ? 'selected' : ''}`}
+                            key={classSchedule.id}
+                          >
+                            <label className="class-registration-choice">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(selectedClassBookings[classSchedule.id])}
+                                onChange={(event) => setSelectedClassBookings((current) => ({
+                                  ...current,
+                                  [classSchedule.id]: event.target.checked
+                                }))}
+                              />
+                              <span>
+                                <strong>{classSchedule.title}</strong>
+                                <small>
+                                  {classSchedule.start_time}–{classSchedule.end_time} · {classSchedule.classroom}
+                                </small>
+                                {classSchedule.instructor && <small>Instructor: {classSchedule.instructor}</small>}
+                              </span>
+                            </label>
+                            <small className={!availability
+                              ? 'class-availability-pending'
+                              : availability.available ? 'class-availability-open' : 'class-availability-closed'}>
+                              {availability
+                                ? availability.available
+                                  ? `${availability.remainingCapacity} seat${availability.remainingCapacity === 1 ? '' : 's'} available`
+                                  : availability.reason
+                                : 'Checking availability…'}
+                            </small>
+                            {selectedClassBookings[classSchedule.id] && (
+                              <label className="class-registration-date">
+                                Class date
+                                <input
+                                  type="date"
+                                  min={earliestClassDate}
+                                  max={classTerm.end_date}
+                                  value={classDates[classSchedule.id] || ''}
+                                  required
+                                  onChange={(event) => setClassDates((current) => ({
+                                    ...current,
+                                    [classSchedule.id]: event.target.value
+                                  }))}
+                                />
+                              </label>
+                            )}
+                          </div>
+                        )
+                      })}
+                  </div>
+                </>
+              )}
+            </div>
+
             <div className="form-group">
-              <label htmlFor="reg-name">1. Full Name *</label>
+              <label htmlFor="reg-dob">2. Date of birth *</label>
+              <p className="field-description">Enter your date of birth to complete registration.</p>
+              <input
+                id="reg-dob"
+                type="date"
+                name="dateOfBirth"
+                value={formData.dateOfBirth}
+                max={accraDateString()}
+                onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="reg-name">3. Full Name *</label>
               <p className="field-description">Identifies everyone using the facility and ensures safety.</p>
               <input
                 id="reg-name"
@@ -500,7 +841,7 @@ function RegisterPage() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="reg-phone">2. Phone Number *</label>
+              <label htmlFor="reg-phone">4. Phone Number *</label>
               <p className="field-description">Used for quick return passes and facility notifications.</p>
               <input
                 id="reg-phone"
@@ -514,7 +855,7 @@ function RegisterPage() {
             </div>
 
             <div className="form-group">
-              <label>3. Purpose of Your Visit *</label>
+              <label>5. Purpose of Your Visit *</label>
               <p className="field-description">Helps us maintain ideal room capacity and services.</p>
 
               <div className="radio-group">
@@ -522,7 +863,6 @@ function RegisterPage() {
                   'Personal Study',
                   'Institute Class',
                   'Group Meeting',
-                  'Computer / Lab Work',
                   'Office / Administrative',
                   'Other'
                 ].map((option) => (
@@ -555,9 +895,12 @@ function RegisterPage() {
             <button
               type="submit"
               className="btn btn-primary btn-large"
-              disabled={loading || !campusCode}
+              disabled={loading || classesLoading || !campusCode || classSchedules.length === 0 ||
+                !Object.values(selectedClassBookings).some(Boolean) ||
+                Object.entries(selectedClassBookings).some(([classId, selected]) => selected &&
+                  classAvailability[`${classId}:${classDates[classId]}`]?.available !== true)}
             >
-              {loading ? 'Registering...' : 'Register & Get Pass'}
+              {loading ? 'Registering...' : 'Register, Book Class & Get Pass'}
             </button>
 
             <div className="quick-switch-hint">

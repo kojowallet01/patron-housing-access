@@ -1,16 +1,19 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { promises as fs, existsSync, statSync } from 'fs';
 import QRCode from 'qrcode';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
-import { randomInt, timingSafeEqual } from 'crypto';
+import { randomBytes, randomInt, scrypt as scryptCallback, timingSafeEqual } from 'crypto';
+import { promisify } from 'util';
 import {
   init,
+  checkClassScheduleSchema,
+  seedInitialTimetables,
   getSettingSync,
   setSetting,
   createSession,
@@ -19,6 +22,8 @@ import {
   findStudentByPhoneAndCampus,
   findStudentById,
   insertStudent,
+  registerStudentWithClassBookings,
+  markClassBookingCalendarAdded,
   listStudents,
   countNewStudents,
   updateStudentFlag,
@@ -50,12 +55,31 @@ import {
   listRetentionSchedules,
   claimDueRetentionSchedules,
   updateRetentionSchedule,
-  cancelRetentionSchedule
+  cancelRetentionSchedule,
+  listAcademicTerms,
+  getAcademicTerm,
+  saveAcademicTerm,
+  setOtherTermsInactive,
+  listClassSchedules,
+  getClassSchedule,
+  saveClassSchedule,
+  createClassBooking,
+  countActiveClassBookings,
+  getClassAttendanceAnalytics,
+  listClassBookings,
+  updateFutureClassBookings,
+  cancelClassBooking,
+  saveClassAttendance,
+  insertClassNotification,
+  countClassBookingsForStudent
 } from './db.js';
 import { sendSingle, sendBulk, health as smsHealth, getConfig as getSmsConfig, fillTemplate, normalizePhone } from './sms.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
+let classScheduleSchemaReady = true;
+const CLASS_SCHEDULE_SETUP_ERROR =
+  'Class registration is not configured in the database yet. Ask an administrator to run supabase/class-schedule-migration.sql, then restart the server.';
 const CAMPUS_INSTITUTE_NAME = process.env.CAMPUS_INSTITUTE_NAME || 'ACCRA INSTITUTE FACULTY STUDENT PORTAL';
 const DEFAULT_CAMPUS = process.env.DEFAULT_CAMPUS || 'TESANO CAMPUS';
 const SUB_CAMPUSES = [
@@ -75,8 +99,10 @@ const CAMPUS_TOKEN_STORAGE_KEYS = {
   security: 'campus_security_tokens',
   'super-admin': 'campus_super_admin_tokens'
 };
-const ALLOW_UNAUTHENTICATED = process.env.ALLOW_UNAUTHENTICATED === 'true';
+const ALLOW_UNAUTHENTICATED = process.env.NODE_ENV !== 'production' && process.env.ALLOW_UNAUTHENTICATED === 'true';
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const SESSION_COOKIE = 'aifsp_session';
+const scrypt = promisify(scryptCallback);
 const SERVER_STARTED_AT = Date.now();
 const ACCESS_TOKEN_PATTERN = /^\d{4}$/;
 const DEFAULT_RETENTION_SMS_SETTINGS = {
@@ -85,6 +111,7 @@ const DEFAULT_RETENTION_SMS_SETTINGS = {
   cooldownDays: 7
 };
 const MAX_SMS_MESSAGE_LENGTH = 500;
+const CLASS_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function parseTokenMap(rawValue) {
   if (!rawValue) return {};
@@ -120,8 +147,45 @@ function resolveCampusName(value) {
   return normalizeCampusName(value || 'TESANO CAMPUS');
 }
 
-function isMatchingToken(candidateToken, tokenValue) {
+function getSessionIdFromRequest(req) {
+  const sessionCookie = (req.headers.cookie || '')
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${SESSION_COOKIE}=`));
+  return sessionCookie ? sessionCookie.slice(SESSION_COOKIE.length + 1) : '';
+}
+
+function setSessionCookie(res, sessionId) {
+  res.cookie(SESSION_COOKIE, sessionId, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/api',
+    maxAge: SESSION_TTL_MS
+  });
+}
+
+function clearSessionCookie(res) {
+  res.clearCookie(SESSION_COOKIE, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/api'
+  });
+}
+
+async function isMatchingToken(candidateToken, tokenValue) {
   if (!candidateToken || !tokenValue) return false;
+  const storedValue = String(tokenValue);
+  if (storedValue.startsWith('scrypt$')) {
+    const [, salt, hash] = storedValue.split('$');
+    if (!salt || !hash) return false;
+    const saltBytes = Buffer.from(salt, 'base64');
+    const expectedHash = Buffer.from(hash, 'base64');
+    if (!saltBytes.length || !expectedHash.length) return false;
+    const candidateHash = Buffer.from(await scrypt(String(candidateToken), saltBytes, expectedHash.length));
+    return expectedHash.length === candidateHash.length && timingSafeEqual(expectedHash, candidateHash);
+  }
   const bufA = Buffer.from(String(candidateToken));
   const bufB = Buffer.from(String(tokenValue));
   if (bufA.length !== bufB.length) return false;
@@ -172,14 +236,30 @@ async function setCampusRoleToken(campusName, role, password) {
   const normalizedCampus = resolveCampusName(campusName);
   const existing = readStoredCampusTokenMap(role);
 
+  for (const [campus, savedPassword] of Object.entries(existing)) {
+    if (savedPassword.startsWith('scrypt$')) continue;
+    const legacySalt = randomBytes(16);
+    const legacyHash = await scrypt(savedPassword, legacySalt, 64);
+    existing[campus] = `scrypt$${legacySalt.toString('base64')}$${Buffer.from(legacyHash).toString('base64')}`;
+  }
+
   if (!password || !String(password).trim()) {
     delete existing[normalizedCampus];
   } else {
-    existing[normalizedCampus] = String(password).trim();
+    const salt = randomBytes(16);
+    const hash = await scrypt(String(password).trim(), salt, 64);
+    existing[normalizedCampus] = `scrypt$${salt.toString('base64')}$${Buffer.from(hash).toString('base64')}`;
   }
 
   await setSetting(key, JSON.stringify(existing));
   return existing;
+}
+
+async function upgradeLegacyCampusPassword(campusName, role, password) {
+  const savedPassword = readStoredCampusTokenMap(role)[resolveCampusName(campusName)];
+  if (savedPassword && !savedPassword.startsWith('scrypt$')) {
+    await setCampusRoleToken(campusName, role, password);
+  }
 }
 
 app.use(helmet());
@@ -189,23 +269,30 @@ const allowedOrigins = rawAllowedOrigins
   ? rawAllowedOrigins.split(',').map(s => s.trim()).filter(Boolean)
   : [];
 
+if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
+  console.warn('[security] ALLOWED_ORIGINS is unset; cross-origin browser requests will be denied.');
+}
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_UNAUTHENTICATED === 'true') {
+  console.warn('[security] ALLOW_UNAUTHENTICATED is ignored in production.');
+}
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.length === 0) {
-      return callback(null, true);
-    }
+    if (!origin) return callback(null, false);
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
     if (process.env.NODE_ENV !== 'production' && (/^http:\/\/localhost(:\d+)?$/.test(origin) || /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin))) {
       return callback(null, true);
     }
-    return callback(new Error(`CORS policy does not allow access from origin ${origin}`));
+    return callback(null, false);
   },
   credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '1mb' }));
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -217,19 +304,96 @@ const apiLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 50,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many authentication attempts, please try again later.' }
 });
 
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts, please try again later.' }
+});
+
+const tokenIpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many access-code requests, please try again later.' }
+});
+
+const tokenPhoneLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => {
+    const phone = normalizePhone(req.body?.phone).replace(/\D/g, '').slice(-15);
+    return phone ? `phone:${phone}` : `ip:${ipKeyGenerator(req.ip)}`;
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many access-code requests for this phone, please try again later.' }
+});
+
+const classBookingLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  keyGenerator: (req) => {
+    const phone = normalizePhone(req.body?.phone || req.query?.phone).replace(/\D/g, '').slice(-15);
+    return phone ? `phone:${phone}` : `ip:${ipKeyGenerator(req.ip)}`;
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many class booking requests. Please try again later.' }
+});
+
 app.use('/api', apiLimiter);
 app.use('/api/register', authLimiter);
 app.use('/api/verify-token', authLimiter);
-app.use('/api/validate-login', authLimiter);
+app.use('/api/validate-login', loginLimiter);
+app.use('/api/generate-token', tokenIpLimiter, tokenPhoneLimiter);
+app.use('/api/scan-entry', tokenIpLimiter, tokenPhoneLimiter);
+app.use('/api/classes/bookings', classBookingLimiter);
+app.use('/api', (req, res, next) => {
+  if (!getSessionIdFromRequest(req) || ['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+  const origin = req.get('origin');
+  const sameOrigin = origin === `${req.protocol}://${req.get('host')}`;
+  const allowedOrigin = origin && (allowedOrigins.includes(origin) ||
+    (process.env.NODE_ENV !== 'production' && (/^http:\/\/localhost(:\d+)?$/.test(origin) || /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin))));
+  if (!sameOrigin && !allowedOrigin) {
+    return res.status(403).json({ error: 'Request origin is not allowed.' });
+  }
+  return next();
+});
 
 function currentDateString() {
   return new Date().toISOString().split('T')[0];
+}
+
+function currentAccraDateString() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Accra',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function isValidDateString(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function isValidTime(value) {
+  return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
 function formatDate(date) {
@@ -524,15 +688,65 @@ async function persistSmsLogs(logs) {
   }
 }
 
+async function notifyClassBookingChanges(bookings, event, updatedClass) {
+  const summary = { accepted: 0, failed: 0, skipped: 0, historyErrors: 0 };
+  for (const booking of bookings) {
+    let status = 'skipped';
+    let provider = null;
+    let providerMessageId = null;
+    let error = null;
+    try {
+      if (booking.student_sms_opt_out) {
+        error = 'Student opted out of SMS.';
+      } else {
+        const message = event === 'class-cancelled'
+          ? `Hi ${booking.student_name}, ${booking.class_title_snapshot} on ${booking.class_date} at ${booking.start_time_snapshot} in ${booking.classroom_snapshot} has been cancelled. Please check the student timetable for updates.`
+          : `Hi ${booking.student_name}, ${booking.class_title_snapshot} has a new schedule: ${CLASS_DAYS[updatedClass.day_of_week]} ${updatedClass.start_time}-${updatedClass.end_time}, ${updatedClass.classroom}. Your ${booking.class_date} booking needs to be rebooked.`;
+        const result = await sendSingle({ to: booking.student_phone, message });
+        if (result.sent) {
+          status = 'accepted';
+          provider = result.provider;
+          providerMessageId = result.providerMessageId;
+          summary.accepted += 1;
+        } else if (result.error) {
+          status = 'failed';
+          error = result.error;
+          summary.failed += 1;
+        } else {
+          error = result.reason || 'SMS was skipped.';
+          summary.skipped += 1;
+        }
+      }
+      if (booking.student_sms_opt_out) summary.skipped += 1;
+      await insertClassNotification({
+        id: uuidv4(),
+        booking_id: booking.id,
+        student_id: booking.student_id,
+        event,
+        status,
+        provider,
+        provider_message_id: providerMessageId,
+        error,
+        created_at: new Date().toISOString()
+      });
+    } catch (notificationError) {
+      summary.historyErrors += 1;
+      console.error(`Class notification processing failed for booking ${booking.id}:`, notificationError);
+    }
+  }
+  return summary;
+}
+
 async function requireAdminAuth(req, res, next) {
   try {
     const rawCampus = req.get('x-campus') || req.body?.campus || req.query?.campus || DEFAULT_CAMPUS;
     const isAllCampuses = typeof rawCampus === 'string' && (rawCampus.trim().toLowerCase() === 'all' || rawCampus.trim().toLowerCase() === 'all campuses');
     const campus = isAllCampuses ? null : resolveCampusName(rawCampus);
-    const session = await resolveSession(req.get('x-session-token'));
+    const session = await resolveSession(getSessionIdFromRequest(req));
 
     if (session) {
       if (session.role === 'admin' || session.role === 'super-admin' || session.is_super_admin) {
+        req.authenticatedRole = session.role || (session.is_super_admin ? 'super-admin' : 'admin');
         req.isSuperAdmin = session.role === 'super-admin' || Boolean(session.is_super_admin);
         req.userCampus = req.isSuperAdmin ? (isAllCampuses ? null : campus) : session.campus;
         return next();
@@ -544,16 +758,18 @@ async function requireAdminAuth(req, res, next) {
     const campusForToken = campus || DEFAULT_CAMPUS;
     const campusAdminToken = getCampusRoleToken(campusForToken, 'admin');
     const campusSuperAdminToken = getCampusRoleToken(campusForToken, 'super-admin');
-    const superAdminMatches = campusSuperAdminToken && isMatchingToken(token, campusSuperAdminToken);
-    const campusAdminMatches = campusAdminToken && isMatchingToken(token, campusAdminToken);
+    const superAdminMatches = campusSuperAdminToken && await isMatchingToken(token, campusSuperAdminToken);
+    const campusAdminMatches = campusAdminToken && await isMatchingToken(token, campusAdminToken);
 
     if (superAdminMatches || campusAdminMatches) {
+      req.authenticatedRole = superAdminMatches ? 'super-admin' : 'admin';
       req.isSuperAdmin = superAdminMatches;
       req.userCampus = (superAdminMatches && isAllCampuses) ? null : campusForToken;
       return next();
     }
 
     if (ALLOW_UNAUTHENTICATED) {
+      req.authenticatedRole = 'development-bypass';
       req.userCampus = isAllCampuses ? null : campusForToken;
       req.isSuperAdmin = false;
       return next();
@@ -590,7 +806,7 @@ function getAdminTargetCampus(req, overrideCampus) {
 async function requireSecurityAuth(req, res, next) {
   try {
     const campus = resolveCampusName(req.get('x-campus') || req.body?.campus || req.query?.campus || DEFAULT_CAMPUS);
-    const session = await resolveSession(req.get('x-session-token'));
+    const session = await resolveSession(getSessionIdFromRequest(req));
 
     if (session) {
       if (session.role === 'security' || session.role === 'super-admin' || session.is_super_admin) {
@@ -604,8 +820,8 @@ async function requireSecurityAuth(req, res, next) {
     const token = req.get('x-security-token') || req.get('x-super-admin-token') || '';
     const campusSecurityToken = getCampusRoleToken(campus, 'security');
     const campusSuperAdminToken = getCampusRoleToken(campus, 'super-admin');
-    const superAdminMatches = campusSuperAdminToken && isMatchingToken(token, campusSuperAdminToken);
-    const campusSecurityMatches = campusSecurityToken && isMatchingToken(token, campusSecurityToken);
+    const superAdminMatches = campusSuperAdminToken && await isMatchingToken(token, campusSuperAdminToken);
+    const campusSecurityMatches = campusSecurityToken && await isMatchingToken(token, campusSecurityToken);
 
     if (superAdminMatches || campusSecurityMatches) {
       req.userCampus = campus;
@@ -679,6 +895,12 @@ app.get('/api', (req, res) => {
       '/api/generate-token',
       '/api/scan-entry',
       '/api/verify-token',
+      '/api/classes',
+      '/api/classes/availability',
+      '/api/classes/bookings',
+      '/api/admin/classes',
+      '/api/admin/classes/attendance',
+      '/api/admin/classes/analytics',
       '/api/admin/today',
       '/api/admin/students',
       '/api/admin/stats',
@@ -691,7 +913,10 @@ app.get('/api', (req, res) => {
 
 app.post('/api/register', async (req, res) => {
   try {
-    const { name, phone, purpose, campus } = req.body;
+    if (!classScheduleSchemaReady) {
+      return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    }
+    const { name, phone, date_of_birth: dateOfBirth, purpose, campus, classBookings } = req.body || {};
     const campusName = resolveCampusName(campus || DEFAULT_CAMPUS);
 
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -699,6 +924,18 @@ app.post('/api/register', async (req, res) => {
     }
     if (!phone || !validatePhone(phone)) {
       return res.status(400).json({ error: 'Valid phone number is required' });
+    }
+    if (!isValidDateString(dateOfBirth) || dateOfBirth > currentAccraDateString()) {
+      return res.status(400).json({ error: 'A valid date of birth that is not in the future is required.' });
+    }
+    if (!Array.isArray(classBookings) || classBookings.length < 1 || classBookings.length > 10 ||
+        classBookings.some((booking) => !booking || typeof booking.classId !== 'string' ||
+          !booking.classId.trim() || !isValidDateString(booking.classDate))) {
+      return res.status(400).json({ error: 'Select at least one valid class session to complete registration.' });
+    }
+    const bookingKeys = classBookings.map((booking) => `${booking.classId}:${booking.classDate}`);
+    if (new Set(bookingKeys).size !== bookingKeys.length) {
+      return res.status(400).json({ error: 'A class session can only be selected once.' });
     }
 
     const existing = await findStudentByPhoneAndCampus(phone.trim(), campusName);
@@ -710,19 +947,50 @@ app.post('/api/register', async (req, res) => {
       id: uuidv4(),
       name: name.trim(),
       phone: phone.trim(),
+      date_of_birth: dateOfBirth,
       purpose: (purpose || '').trim(),
       campus: campusName,
       created_at: new Date().toISOString()
     };
 
-    await insertStudent(student);
+    const classDate = currentAccraDateString();
+    const currentTime = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Africa/Accra',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    }).format(new Date());
+    const selectedBookings = classBookings.map((booking) => ({
+      id: uuidv4(),
+      class_id: booking.classId.trim(),
+      class_date: booking.classDate,
+      created_at: student.created_at,
+      updated_at: student.created_at
+    }));
+    const registration = await registerStudentWithClassBookings(student, selectedBookings, classDate, currentTime);
 
     sendWelcomeSms(student).catch((error) => {
       console.error('Welcome SMS processing failed:', error);
     });
 
-    res.json({ success: true, message: 'Registration successful', studentId: student.id, campus: student.campus });
+    res.json({
+      success: true,
+      message: 'Registration successful',
+      studentId: student.id,
+      campus: student.campus,
+      bookings: registration.bookings
+    });
   } catch (error) {
+    const message = String(error.message || '');
+    if (/class is full/i.test(message)) return res.status(409).json({ error: 'A selected class session is full.' });
+    if (/already ended|outside the schedule|not open|academic term is not active/i.test(message)) {
+      return res.status(400).json({ error: message });
+    }
+    if (/duplicate|unique/i.test(message)) return res.status(409).json({ error: 'Registration already exists or a selected class session was booked.' });
+    if (/PGRST20[25]|42P01|register_student_with_class_bookings/i.test(message)) {
+      classScheduleSchemaReady = false;
+      return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    }
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Registration failed' });
   }
@@ -730,7 +998,12 @@ app.post('/api/register', async (req, res) => {
 
 app.get('/api/health', async (_req, res) => {
   const status = await checkSupabaseHealth();
-  res.json({ ok: true, ...status, uptime: Math.round(process.uptime()) });
+  res.json({
+    ok: true,
+    ...status,
+    classScheduleReady: classScheduleSchemaReady,
+    uptime: Math.round(process.uptime())
+  });
 });
 
 app.get('/api/campus-qr', async (req, res) => {
@@ -849,6 +1122,502 @@ app.post('/api/verify-token', requireSecurityAuth, async (req, res) => {
   }
 });
 
+app.get('/api/classes', async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = resolveCampusName(req.query.campus || DEFAULT_CAMPUS);
+    const terms = await listAcademicTerms(campus);
+    const activeTerm = terms.find((term) => term.status === 'active');
+    if (!activeTerm) return res.json({ term: null, classes: [] });
+    const schedules = await listClassSchedules(campus, activeTerm.id);
+    const classes = schedules.filter((classSchedule) => classSchedule.status === 'published');
+    return res.json({ term: activeTerm, classes });
+  } catch (error) {
+    console.error('Public class timetable lookup failed:', error);
+    return res.status(500).json({ error: 'Unable to load the class timetable.' });
+  }
+});
+
+app.get('/api/classes/availability', async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = resolveCampusName(req.query.campus || DEFAULT_CAMPUS);
+    const classId = String(req.query.class_id || '');
+    const classDate = req.query.date;
+    if (!classId || !isValidDateString(classDate)) {
+      return res.status(400).json({ error: 'Choose a class and valid class date.' });
+    }
+    const classSchedule = await getClassSchedule(classId, campus);
+    if (!classSchedule || classSchedule.status !== 'published') {
+      return res.json({ available: false, reason: 'Registration is closed for this class.' });
+    }
+    const term = await getAcademicTerm(classSchedule.term_id, campus);
+    if (!term || term.status !== 'active' || classDate < term.start_date || classDate > term.end_date ||
+        new Date(`${classDate}T00:00:00.000Z`).getUTCDay() !== classSchedule.day_of_week) {
+      return res.json({ available: false, reason: 'This class does not meet on the selected date.' });
+    }
+    const today = currentAccraDateString();
+    const currentTime = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Africa/Accra',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    }).format(new Date());
+    if (classDate < today || (classDate === today && currentTime >= classSchedule.end_time)) {
+      return res.json({ available: false, reason: 'This class session has ended.' });
+    }
+    const bookedCount = await countActiveClassBookings(classId, classDate);
+    const remainingCapacity = Math.max(0, classSchedule.capacity - bookedCount);
+    return res.json({
+      available: remainingCapacity > 0,
+      capacity: classSchedule.capacity,
+      bookedCount,
+      remainingCapacity,
+      reason: remainingCapacity > 0 ? '' : 'This class session is full.'
+    });
+  } catch (error) {
+    console.error('Class availability query failed:', error);
+    return res.status(500).json({ error: 'Unable to check class availability.' });
+  }
+});
+
+app.get('/api/classes/bookings', async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = resolveCampusName(req.query.campus || DEFAULT_CAMPUS);
+    const phone = String(req.query.phone || '').trim();
+    const name = String(req.query.name || '').trim();
+    if (!phone || !validatePhone(phone) || !name) {
+      return res.status(400).json({ error: 'Enter your registered name and phone number.' });
+    }
+    const student = await findStudentByPhoneAndCampus(phone, campus);
+    if (!student || student.name.trim().toLowerCase() !== name.toLowerCase()) {
+      return res.status(404).json({ error: 'No student registration matches that name, phone number, and campus.' });
+    }
+    const bookings = await listClassBookings({ campus, studentId: student.id });
+    return res.json({ bookings });
+  } catch (error) {
+    console.error('Student class booking lookup failed:', error);
+    return res.status(500).json({ error: 'Unable to load class bookings.' });
+  }
+});
+
+app.post('/api/classes/bookings', async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const { classId, classDate, phone, name, campus: requestedCampus } = req.body || {};
+    const campus = resolveCampusName(requestedCampus || DEFAULT_CAMPUS);
+    const normalizedPhone = String(phone || '').trim();
+    if (!normalizedPhone || !validatePhone(normalizedPhone) || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Enter your registered name and phone number.' });
+    }
+    if (typeof classId !== 'string' || !classId.trim() || !isValidDateString(classDate)) {
+      return res.status(400).json({ error: 'Choose a class and a valid class date.' });
+    }
+    const student = await findStudentByPhoneAndCampus(normalizedPhone, campus);
+    if (!student) return res.status(404).json({ error: 'Register for campus access before booking a class.' });
+    if (student.name.trim().toLowerCase() !== name.trim().toLowerCase()) {
+      return res.status(404).json({ error: 'Student name does not match the campus registration.' });
+    }
+    const classSchedule = await getClassSchedule(classId, campus);
+    if (!classSchedule) return res.status(404).json({ error: 'Class not found for this campus.' });
+    if (classDate === currentAccraDateString()) {
+      const currentTime = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Africa/Accra',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23'
+      }).format(new Date());
+      if (currentTime >= classSchedule.end_time) {
+        return res.status(400).json({ error: 'This class session has already ended and cannot be booked.' });
+      }
+    }
+    const now = new Date().toISOString();
+    const booking = await createClassBooking({
+      id: uuidv4(),
+      class_id: classId,
+      student_id: student.id,
+      campus,
+      class_date: classDate,
+      status: 'booked',
+      created_at: now,
+      updated_at: now
+    }, currentAccraDateString());
+    return res.status(201).json({ success: true, booking });
+  } catch (error) {
+    const message = String(error.message || '');
+    if (/full/i.test(message)) return res.status(409).json({ error: 'This class session is full.' });
+    if (/duplicate|unique/i.test(message)) return res.status(409).json({ error: 'You already booked this class session.' });
+    if (/not open|outside the schedule|active/i.test(message)) return res.status(400).json({ error: message });
+    console.error('Class booking failed:', error);
+    return res.status(500).json({ error: 'Unable to create the class booking.' });
+  }
+});
+
+app.post('/api/classes/bookings/:id/cancel', async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = resolveCampusName(req.body?.campus || DEFAULT_CAMPUS);
+    const phone = String(req.body?.phone || '').trim();
+    const name = String(req.body?.name || '').trim();
+    if (!phone || !validatePhone(phone) || !name) return res.status(400).json({ error: 'Enter your registered name and phone number.' });
+    const student = await findStudentByPhoneAndCampus(phone, campus);
+    if (!student) return res.status(404).json({ error: 'Student registration not found.' });
+    if (student.name.trim().toLowerCase() !== name.toLowerCase()) return res.status(404).json({ error: 'Student name does not match the campus registration.' });
+    const booking = (await listClassBookings({ bookingId: req.params.id, campus, studentId: student.id }))[0];
+    if (!booking || booking.status !== 'booked') return res.status(404).json({ error: 'Active class booking not found.' });
+    const today = currentAccraDateString();
+    if (booking.class_date < today) return res.status(400).json({ error: 'Past class bookings cannot be cancelled.' });
+    if (booking.class_date === today) {
+      const currentTime = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Africa/Accra',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23'
+      }).format(new Date());
+      if (currentTime >= booking.start_time_snapshot) {
+        return res.status(400).json({ error: 'A class booking cannot be cancelled after the class starts.' });
+      }
+    }
+    const cancelled = await cancelClassBooking(booking.id, student.id, new Date().toISOString());
+    if (!cancelled) return res.status(409).json({ error: 'This class booking was already changed.' });
+    return res.json({ success: true, message: 'Class booking cancelled.' });
+  } catch (error) {
+    console.error('Class booking cancellation failed:', error);
+    return res.status(500).json({ error: 'Unable to cancel the class booking.' });
+  }
+});
+
+app.post('/api/classes/bookings/:id/calendar', async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = resolveCampusName(req.body?.campus || DEFAULT_CAMPUS);
+    const phone = String(req.body?.phone || '').trim();
+    const name = String(req.body?.name || '').trim();
+    if (!phone || !validatePhone(phone) || !name) {
+      return res.status(400).json({ error: 'Enter your registered name and phone number.' });
+    }
+    const student = await findStudentByPhoneAndCampus(phone, campus);
+    if (!student || student.name.trim().toLowerCase() !== name.toLowerCase()) {
+      return res.status(404).json({ error: 'Student registration not found.' });
+    }
+    const booking = (await listClassBookings({
+      bookingId: req.params.id,
+      campus,
+      studentId: student.id
+    }))[0];
+    if (!booking || booking.status !== 'booked') {
+      return res.status(404).json({ error: 'Active class booking not found.' });
+    }
+    if (!booking.calendar_added_at) {
+      const clickedAt = new Date().toISOString();
+      const marked = await markClassBookingCalendarAdded(booking.id, student.id, campus, clickedAt);
+      if (!marked) {
+        const latestBooking = (await listClassBookings({
+          bookingId: booking.id,
+          campus,
+          studentId: student.id
+        }))[0];
+        if (!latestBooking?.calendar_added_at) {
+          return res.status(409).json({ error: 'Unable to record the calendar selection. Please try again.' });
+        }
+        return res.json({ success: true, calendarAddedAt: latestBooking.calendar_added_at });
+      }
+      return res.json({ success: true, calendarAddedAt: clickedAt });
+    }
+    return res.json({ success: true, calendarAddedAt: booking.calendar_added_at });
+  } catch (error) {
+    console.error('Calendar selection tracking failed:', error);
+    return res.status(500).json({ error: 'Unable to record the calendar selection.' });
+  }
+});
+
+app.get('/api/admin/academic-terms', requireAdminAuth, async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = getAdminTargetCampus(req);
+    if (!campus) return res.status(400).json({ error: 'Select one campus to manage its timetable.' });
+    return res.json({ terms: await listAcademicTerms(campus), campus });
+  } catch (error) {
+    console.error('Academic term query failed:', error);
+    return res.status(500).json({ error: 'Unable to load academic terms.' });
+  }
+});
+
+app.post('/api/admin/academic-terms', requireAdminAuth, async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = getAdminTargetCampus(req);
+    if (!campus) return res.status(400).json({ error: 'Select one campus to manage its timetable.' });
+    const { id, name, start_date: startDate, end_date: endDate, status = 'inactive' } = req.body || {};
+    if (typeof name !== 'string' || !name.trim() || !isValidDateString(startDate) ||
+        !isValidDateString(endDate) || endDate < startDate || !['active', 'inactive'].includes(status)) {
+      return res.status(400).json({ error: 'Provide a term name, valid date range, and active or inactive status.' });
+    }
+    const now = new Date().toISOString();
+    const term = {
+      id: typeof id === 'string' && id ? id : uuidv4(),
+      campus,
+      name: name.trim().slice(0, 100),
+      start_date: startDate,
+      end_date: endDate,
+      status,
+      created_at: now,
+      updated_at: now
+    };
+    if (id) {
+      const existing = await getAcademicTerm(id, campus);
+      if (!existing) return res.status(404).json({ error: 'Academic term not found for this campus.' });
+      term.created_at = existing.created_at;
+    }
+    if (status === 'active') await setOtherTermsInactive(campus, term.id, now);
+    await saveAcademicTerm(term);
+    return res.json({ success: true, term });
+  } catch (error) {
+    console.error('Academic term save failed:', error);
+    return res.status(500).json({ error: 'Unable to save the academic term.' });
+  }
+});
+
+app.get('/api/admin/classes', requireAdminAuth, async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = getAdminTargetCampus(req);
+    if (!campus) return res.status(400).json({ error: 'Select one campus to manage its timetable.' });
+    const [terms, classes] = await Promise.all([
+      listAcademicTerms(campus),
+      listClassSchedules(campus, req.query.term_id)
+    ]);
+    return res.json({ terms, classes, campus });
+  } catch (error) {
+    console.error('Admin class timetable query failed:', error);
+    return res.status(500).json({ error: 'Unable to load the class timetable.' });
+  }
+});
+
+app.post('/api/admin/classes', requireAdminAuth, async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = getAdminTargetCampus(req);
+    if (!campus) return res.status(400).json({ error: 'Select one campus to manage its timetable.' });
+    const payload = req.body || {};
+    const term = typeof payload.term_id === 'string' ? await getAcademicTerm(payload.term_id, campus) : null;
+    const dayOfWeek = Number(payload.day_of_week);
+    const capacity = Number(payload.capacity);
+    const status = payload.status || 'draft';
+    const title = typeof payload.title === 'string' ? payload.title.trim() : '';
+    const classroom = typeof payload.classroom === 'string' ? payload.classroom.trim() : '';
+    if (!term || !title || title.length > 120 || !classroom || classroom.length > 100 ||
+        !Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6 ||
+        !isValidTime(payload.start_time) || !isValidTime(payload.end_time) || payload.start_time >= payload.end_time ||
+        !Number.isInteger(capacity) || capacity < 1 || capacity > 5000 ||
+        !['draft', 'published', 'disabled', 'cancelled'].includes(status) ||
+        (payload.description && String(payload.description).length > 2000) ||
+        (payload.instructor && String(payload.instructor).length > 120)) {
+      return res.status(400).json({ error: 'Provide valid class details, schedule, room, capacity, term, and status.' });
+    }
+
+    const now = new Date().toISOString();
+    const id = typeof payload.id === 'string' && payload.id ? payload.id : uuidv4();
+    const existing = payload.id ? await getClassSchedule(payload.id, campus) : null;
+    if (payload.id && !existing) return res.status(404).json({ error: 'Class not found for this campus.' });
+    const schedule = {
+      id,
+      term_id: term.id,
+      campus,
+      title,
+      description: String(payload.description || '').trim(),
+      day_of_week: dayOfWeek,
+      start_time: payload.start_time,
+      end_time: payload.end_time,
+      classroom,
+      capacity,
+      instructor: String(payload.instructor || '').trim(),
+      status,
+      created_at: existing?.created_at || now,
+      updated_at: now
+    };
+
+    const terms = await listAcademicTerms(campus);
+    const termById = new Map(terms.map((item) => [item.id, item]));
+    const schedules = await listClassSchedules(campus);
+    const overlaps = schedules.some((other) => {
+      if (other.id === id || other.status === 'cancelled' || other.day_of_week !== dayOfWeek ||
+          other.classroom.trim().toLowerCase() !== classroom.toLowerCase() ||
+          other.start_time >= schedule.end_time || schedule.start_time >= other.end_time) return false;
+      const otherTerm = termById.get(other.term_id);
+      if (!otherTerm) return false;
+      return term.start_date <= otherTerm.end_date && otherTerm.start_date <= term.end_date;
+    });
+    if (overlaps) return res.status(409).json({ error: 'That classroom is already scheduled for an overlapping class at this time.' });
+
+    const activeBookings = existing ? await listClassBookings({ classId: id, status: 'booked' }) : [];
+    const bookingsPerDate = new Map();
+    activeBookings.forEach((booking) => bookingsPerDate.set(
+      booking.class_date,
+      (bookingsPerDate.get(booking.class_date) || 0) + 1
+    ));
+    if ([...bookingsPerDate.values()].some((count) => count > capacity)) {
+      return res.status(409).json({ error: 'Capacity cannot be lower than existing bookings for a class session.' });
+    }
+
+    const scheduleChanged = Boolean(existing && (
+      existing.term_id !== schedule.term_id ||
+      existing.title !== schedule.title ||
+      existing.day_of_week !== schedule.day_of_week ||
+      existing.start_time !== schedule.start_time ||
+      existing.end_time !== schedule.end_time ||
+      existing.classroom !== schedule.classroom
+    ));
+    await saveClassSchedule(schedule);
+    let notifications = { accepted: 0, failed: 0, skipped: 0, historyErrors: 0 };
+    if (existing && status === 'cancelled' && existing.status !== 'cancelled') {
+      const affected = await updateFutureClassBookings(id, 'class_cancelled', currentAccraDateString(), now);
+      notifications = await notifyClassBookingChanges(affected, 'class-cancelled', schedule);
+    } else if (scheduleChanged && status !== 'cancelled') {
+      const affected = await updateFutureClassBookings(id, 'schedule_changed', currentAccraDateString(), now);
+      notifications = await notifyClassBookingChanges(affected, 'schedule-changed', schedule);
+    }
+    return res.json({ success: true, class: schedule, notifications });
+  } catch (error) {
+    console.error('Class schedule save failed:', error);
+    return res.status(500).json({ error: 'Unable to save the class schedule.' });
+  }
+});
+
+app.get('/api/admin/classes/attendance', requireAdminAuth, async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = getAdminTargetCampus(req);
+    const classDate = req.query.date;
+    const classId = typeof req.query.class_id === 'string' ? req.query.class_id : '';
+    if (!campus) return res.status(400).json({ error: 'Select one campus to view class attendance.' });
+    if (!isValidDateString(classDate)) return res.status(400).json({ error: 'Use a valid class date in YYYY-MM-DD format.' });
+    if (classId && !(await getClassSchedule(classId, campus))) {
+      return res.status(404).json({ error: 'Class not found for this campus.' });
+    }
+    const [bookings, campusEntries] = await Promise.all([
+      listClassBookings({ campus, classDate, classId }),
+      listTokensVerifiedOn(campus, classDate)
+    ]);
+    const campusEntryByStudent = new Map();
+    campusEntries.forEach((entry) => {
+      const current = campusEntryByStudent.get(entry.student_id);
+      if (!current || entry.verified_at < current.verified_at) campusEntryByStudent.set(entry.student_id, entry);
+    });
+    const checkedInStudents = new Set(campusEntryByStudent.keys());
+    const activeBookings = bookings.filter((booking) => booking.status === 'booked');
+    const bookedStudents = new Set(activeBookings.map((booking) => booking.student_id));
+    const roster = bookings.map((booking) => ({
+      ...booking,
+      campus_attended: checkedInStudents.has(booking.student_id),
+      campus_entry_at: campusEntryByStudent.get(booking.student_id)?.verified_at || null,
+      class_attendance: booking.status !== 'booked' ? booking.status : booking.attendance?.status || 'pending'
+    }));
+    const campusOnly = [...campusEntryByStudent.values()].filter((entry) => !bookedStudents.has(entry.student_id));
+    const summary = {
+      campusEntries: checkedInStudents.size,
+      classBookings: activeBookings.length,
+      present: activeBookings.filter((booking) => booking.attendance?.status === 'present').length,
+      absent: activeBookings.filter((booking) => booking.attendance?.status === 'absent').length,
+      pending: activeBookings.filter((booking) => !booking.attendance).length,
+      enteredWithoutClassBooking: campusOnly.length,
+      bookedWithoutCampusEntry: activeBookings.filter((booking) => !checkedInStudents.has(booking.student_id)).length
+    };
+    return res.json({ date: classDate, summary, roster, campusOnly });
+  } catch (error) {
+    console.error('Class attendance report failed:', error);
+    return res.status(500).json({ error: 'Unable to load class attendance.' });
+  }
+});
+
+app.get('/api/admin/classes/analytics', requireAdminAuth, async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = getAdminTargetCampus(req);
+    const startDate = req.query.start_date;
+    const endDate = req.query.end_date;
+    if (!campus) return res.status(400).json({ error: 'Select one campus to view class analytics.' });
+    if (!isValidDateString(startDate) || !isValidDateString(endDate) || startDate > endDate) {
+      return res.status(400).json({ error: 'Choose a valid date range in YYYY-MM-DD format.' });
+    }
+    const rangeDays = (Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`)) / 86400000;
+    if (rangeDays > 1825) return res.status(400).json({ error: 'Class analytics date ranges cannot exceed five years.' });
+    const analytics = await getClassAttendanceAnalytics(campus, startDate, endDate);
+    return res.json({ campus, startDate, endDate, ...analytics });
+  } catch (error) {
+    console.error('Class analytics query failed:', error);
+    return res.status(500).json({ error: 'Unable to load class analytics.' });
+  }
+});
+
+app.put('/api/admin/classes/bookings/:id/attendance', requireAdminAuth, async (req, res) => {
+  try {
+    if (!classScheduleSchemaReady) return res.status(503).json({ error: CLASS_SCHEDULE_SETUP_ERROR });
+    const campus = getAdminTargetCampus(req);
+    const status = req.body?.status;
+    if (!campus) return res.status(400).json({ error: 'Select one campus to record class attendance.' });
+    if (!['present', 'absent'].includes(status)) return res.status(400).json({ error: 'Attendance must be present or absent.' });
+    const booking = (await listClassBookings({ campus, bookingId: req.params.id }))[0];
+    if (!booking || booking.status !== 'booked') return res.status(404).json({ error: 'Active class booking not found.' });
+    const today = currentAccraDateString();
+    if (booking.class_date > today) return res.status(400).json({ error: 'Attendance cannot be recorded for a future class.' });
+    if (booking.class_date === today) {
+      const currentTime = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Africa/Accra',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23'
+      }).format(new Date());
+      if (status === 'absent' && currentTime < booking.end_time_snapshot) {
+        return res.status(400).json({ error: 'An absence can only be recorded after the scheduled class ends.' });
+      }
+      if (status === 'present' && currentTime < booking.start_time_snapshot) {
+        return res.status(400).json({ error: 'Attendance cannot be recorded before the scheduled class starts.' });
+      }
+    }
+    const attendance = {
+      id: booking.attendance?.id || uuidv4(),
+      booking_id: booking.id,
+      class_id: booking.class_id,
+      student_id: booking.student_id,
+      class_date: booking.class_date,
+      status,
+      verified_by: req.authenticatedRole || 'admin',
+      verified_at: new Date().toISOString()
+    };
+    await saveClassAttendance(attendance);
+    return res.json({ success: true, attendance });
+  } catch (error) {
+    console.error('Class attendance update failed:', error);
+    return res.status(500).json({ error: 'Unable to update class attendance.' });
+  }
+});
+
+app.get('/api/classes/notices', async (req, res) => {
+  try {
+    const campus = resolveCampusName(req.query.campus || DEFAULT_CAMPUS);
+    const phone = String(req.query.phone || '').trim();
+    const name = String(req.query.name || '').trim();
+    if (!phone || !validatePhone(phone) || !name) return res.status(400).json({ error: 'Enter your registered name and phone number.' });
+    const student = await findStudentByPhoneAndCampus(phone, campus);
+    if (!student || student.name.trim().toLowerCase() !== name.toLowerCase()) return res.status(404).json({ error: 'Student registration not found.' });
+    const bookings = await listClassBookings({ campus, studentId: student.id });
+    return res.json({
+      notices: bookings.flatMap((booking) => (booking.notifications || []).map((notice) => ({
+        event: notice.event,
+        status: notice.status,
+        error: notice.error,
+        created_at: notice.created_at,
+        booking_id: booking.id
+      })))
+    });
+  } catch (error) {
+    console.error('Class notification history lookup failed:', error);
+    return res.status(500).json({ error: 'Unable to load class change notices.' });
+  }
+});
+
 app.post('/api/validate-login', async (req, res) => {
   try {
     const { role, campus, password } = req.body || {};
@@ -866,17 +1635,18 @@ app.post('/api/validate-login', async (req, res) => {
 
     if (selectedRole === 'super-admin') {
       const expected = getCampusRoleToken(selectedCampus, 'super-admin');
-      const isValid = Boolean(expected) && isMatchingToken(passwordValue, expected);
+      const isValid = Boolean(expected) && await isMatchingToken(passwordValue, expected);
       if (!isValid) {
         return res.json({ valid: false, role: 'super-admin', campus: selectedCampus });
       }
 
+      await upgradeLegacyCampusPassword(selectedCampus, selectedRole, passwordValue);
       const session = await createSession({ id: uuidv4(), role: 'super-admin', campus: selectedCampus, is_super_admin: true, created_at: new Date().toISOString(), expires_at: new Date(Date.now() + SESSION_TTL_MS).toISOString() });
+      setSessionCookie(res, session.id);
       return res.json({
         valid: true,
         role: 'super-admin',
         campus: selectedCampus,
-        sessionToken: session.id,
         expiresAt: session.expires_at
       });
     }
@@ -885,17 +1655,18 @@ app.post('/api/validate-login', async (req, res) => {
       ? getCampusRoleToken(selectedCampus, 'admin') || ADMIN_TOKEN
       : getCampusRoleToken(selectedCampus, 'security') || SECURITY_TOKEN;
 
-    const isValid = Boolean(expected) && isMatchingToken(passwordValue, expected);
+    const isValid = Boolean(expected) && await isMatchingToken(passwordValue, expected);
     if (!isValid) {
       return res.json({ valid: false, role: selectedRole, campus: selectedCampus });
     }
 
+    await upgradeLegacyCampusPassword(selectedCampus, selectedRole, passwordValue);
     const session = await createSession({ id: uuidv4(), role: selectedRole, campus: selectedCampus, is_super_admin: false, created_at: new Date().toISOString(), expires_at: new Date(Date.now() + SESSION_TTL_MS).toISOString() });
+    setSessionCookie(res, session.id);
     return res.json({
       valid: true,
       role: selectedRole,
       campus: selectedCampus,
-      sessionToken: session.id,
       expiresAt: session.expires_at
     });
   } catch (error) {
@@ -906,7 +1677,7 @@ app.post('/api/validate-login', async (req, res) => {
 
 app.get('/api/session', async (req, res) => {
   try {
-    const session = await resolveSession(req.get('x-session-token'));
+    const session = await resolveSession(getSessionIdFromRequest(req));
     if (!session) {
       return res.status(401).json({ valid: false, error: 'Session expired or invalid.' });
     }
@@ -926,7 +1697,8 @@ app.get('/api/session', async (req, res) => {
 
 app.post('/api/logout', async (req, res) => {
   try {
-    await deleteSession(req.get('x-session-token'));
+    await deleteSession(getSessionIdFromRequest(req));
+    clearSessionCookie(res);
     res.json({ success: true });
   } catch (error) {
     console.error('Logout failed:', error.message || error);
@@ -944,9 +1716,9 @@ app.get('/api/super-admin/passwords', requireAdminAuth, (req, res) => {
     const securityMap = readStoredCampusTokenMap('security');
     const superAdminMap = readStoredCampusTokenMap('super-admin');
     res.json({
-      admin: adminMap,
-      security: securityMap,
-      superAdmin: superAdminMap,
+      admin: Object.fromEntries(Object.keys(adminMap).map((campus) => [campus, true])),
+      security: Object.fromEntries(Object.keys(securityMap).map((campus) => [campus, true])),
+      superAdmin: Object.fromEntries(Object.keys(superAdminMap).map((campus) => [campus, true])),
       campuses: SUB_CAMPUSES
     });
   } catch (error) {
@@ -967,6 +1739,9 @@ app.post('/api/super-admin/passwords', requireAdminAuth, async (req, res) => {
 
     if (!selectedRole || !['admin', 'security', 'super-admin'].includes(selectedRole)) {
       return res.status(400).json({ error: 'Role must be admin, security, or super-admin.' });
+    }
+    if (typeof password !== 'string' || password.trim().length < 12) {
+      return res.status(400).json({ error: 'Passwords must be at least 12 characters long.' });
     }
 
     await setCampusRoleToken(selectedCampus, selectedRole, password);
@@ -1727,6 +2502,10 @@ app.delete('/api/admin/students/:id', requireAdminAuth, async (req, res) => {
       return res.status(404).json({ error: 'Student not found' });
     }
 
+    if (await countClassBookingsForStudent(student.id)) {
+      return res.status(409).json({ error: 'This student has class booking or attendance history and cannot be deleted without removing academic records.' });
+    }
+
     await deleteStudent(student.id);
 
     res.json({ success: true, message: 'Visitor removed successfully' });
@@ -1842,6 +2621,10 @@ function startServer(port, host = '0.0.0.0', attemptsLeft = 10) {
 
 async function main() {
   await init();
+  classScheduleSchemaReady = await checkClassScheduleSchema();
+  if (classScheduleSchemaReady) {
+    await seedInitialTimetables(SUB_CAMPUSES);
+  }
   startRetentionSchedulePoller();
   startServer(PORT);
 }

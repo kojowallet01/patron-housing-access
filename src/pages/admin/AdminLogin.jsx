@@ -47,12 +47,12 @@ function AdminLogin() {
       const result = await response.json()
 
       const level = ACCESS_LEVELS.find((l) => l.value === role)
-      if (!response.ok || !result.valid || !result.sessionToken) {
+      if (!response.ok || !result.valid) {
         setError(`${level ? level.label : 'Access'} password is invalid for the selected campus.`)
         return
       }
 
-      setSession(result.sessionToken, result.role, result.campus)
+      setSession(result.role, result.campus)
       setSelectedCampus(result.campus)
 
       const from = location.state?.from

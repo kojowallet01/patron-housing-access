@@ -43,6 +43,14 @@ function Home() {
             <div className="page-url">localhost:3000/admin/login</div>
             <button className="page-btn">Open</button>
           </div>
+
+          <div className="page-card" onClick={() => window.location.href = '/classes'}>
+            <div className="page-icon">📚</div>
+            <h3>Class Timetable</h3>
+            <p>View and book classes separately from campus access</p>
+            <div className="page-url">/classes</div>
+            <button className="page-btn">Open</button>
+          </div>
         </div>
 
         <div className="home-info">
