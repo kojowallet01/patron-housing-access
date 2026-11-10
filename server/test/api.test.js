@@ -942,6 +942,7 @@ test('class bookings never grant campus access and class attendance stays separa
   const firstRegistration = await api('POST', '/api/register', {
     name: 'Class Booking Student',
     phone: studentPhone,
+    date_of_birth: '1994-06-15',
     purpose: 'Class attendance test',
     campus,
     classBookings: [{
@@ -1019,9 +1020,12 @@ test('class bookings never grant campus access and class attendance stays separa
   assert.equal(beforeCampusEntry.status, 200);
   assert.equal(beforeCampusEntry.data.summary.pending, 3);
   assert.equal(beforeCampusEntry.data.summary.bookedWithoutCampusEntry, 3);
+  const unauthorizedClassReport = await api('GET', `/api/admin/classes/attendance?date=${today}`);
+  assert.equal(unauthorizedClassReport.status, 401);
   const firstClassReport = await api('GET', `/api/admin/classes/attendance?date=${today}&class_id=${firstClass.id}`, null, SUPER_ADMIN_HEADERS);
   assert.equal(firstClassReport.status, 200);
   assert.equal(firstClassReport.data.roster.length, 1);
+  assert.equal(firstClassReport.data.roster[0].student_date_of_birth, '1994-06-15');
 
   const firstClassBooking = todaysBookings.find((booking) => booking.class_id === firstClass.id);
   const secondClassBooking = todaysBookings.find((booking) => booking.class_id === secondClass.id);

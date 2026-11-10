@@ -264,7 +264,8 @@ function Classes() {
   const searchQuery = studentSearch.trim().toLowerCase()
   const visibleRoster = (report?.roster || []).filter((booking) =>
     !searchQuery || booking.student_name?.toLowerCase().includes(searchQuery) ||
-      booking.student_phone?.toLowerCase().includes(searchQuery)
+      booking.student_phone?.toLowerCase().includes(searchQuery) ||
+      booking.student_date_of_birth?.includes(searchQuery)
   )
   const visibleCampusOnly = (report?.campusOnly || []).filter((student) =>
     !searchQuery || student.name?.toLowerCase().includes(searchQuery) ||
@@ -275,10 +276,11 @@ function Classes() {
     if (!report) return
     const escape = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`
     const rows = [
-      ['Date', 'Student', 'Phone', 'Class', 'Start', 'End', 'Room', 'Campus entry', 'Campus check-in time', 'Class attendance', 'Booking status'],
+      ['Date', 'Student', 'Date of birth', 'Phone', 'Class', 'Start', 'End', 'Room', 'Campus entry', 'Campus check-in time', 'Class attendance', 'Booking status'],
       ...visibleRoster.map((booking) => [
         report.date,
         booking.student_name,
+        booking.student_date_of_birth || 'Not provided',
         booking.student_phone,
         booking.class_title_snapshot,
         booking.start_time_snapshot,
@@ -292,6 +294,7 @@ function Classes() {
       ...visibleCampusOnly.map((student) => [
         report.date,
         student.name,
+        '',
         student.phone,
         '',
         '',
@@ -406,7 +409,7 @@ function Classes() {
 
       <section className="admin-card">
         <div className="admin-card-header">
-          <div className="admin-card-title"><Users size={18} /><h2>Class attendance report</h2></div>
+          <div className="admin-card-title"><Users size={18} /><h2>Class reports · Attendance roster</h2></div>
           <div className="class-report-filters">
             <label>Class
               <select value={reportClassId} onChange={(event) => changeReportClass(event.target.value)}>
@@ -431,14 +434,15 @@ function Classes() {
             </div>
             <div className="class-report-table-wrap">
               <label className="class-report-search">Search student
-                <input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Name or phone" />
+                <input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Name, phone, or date of birth" />
               </label>
               <table className="class-report-table">
-                <thead><tr><th>Student / class</th><th>Class time</th><th>Campus entry</th><th>Class attendance</th><th>Record</th></tr></thead>
+                <thead><tr><th>Student / class</th><th>Date of birth</th><th>Class time</th><th>Campus entry</th><th>Class attendance</th><th>Record</th></tr></thead>
                 <tbody>
                   {visibleRoster.map((booking) => (
                     <tr key={booking.id}>
                       <td><strong>{booking.student_name}</strong><small>{booking.student_phone}</small><small>{booking.class_title_snapshot}</small></td>
+                      <td>{booking.student_date_of_birth || 'Not provided'}</td>
                       <td>{booking.start_time_snapshot}–{booking.end_time_snapshot}<small>{booking.classroom_snapshot}</small></td>
                       <td>{booking.campus_attended ? 'Entered campus' : 'No campus entry'}{booking.campus_entry_at && <small>{new Date(booking.campus_entry_at).toLocaleTimeString('en-GH', { timeZone: 'Africa/Accra', hour: '2-digit', minute: '2-digit' })}</small>}</td>
                       <td>{booking.class_attendance}</td>
@@ -452,7 +456,7 @@ function Classes() {
                       </td>
                     </tr>
                   ))}
-                  {visibleRoster.length === 0 && <tr><td colSpan="5">No matching class bookings for this date.</td></tr>}
+                  {visibleRoster.length === 0 && <tr><td colSpan="6">No matching class bookings for this date.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -468,7 +472,7 @@ function Classes() {
 
       <section className="admin-card">
         <div className="admin-card-header">
-          <div className="admin-card-title"><CalendarDays size={18} /><h2>Class analytics</h2></div>
+          <div className="admin-card-title"><CalendarDays size={18} /><h2>Class reports · Analytics</h2></div>
           <div className="class-report-filters">
             <label>From<input type="date" value={analyticsStartDate} onChange={(event) => setAnalyticsStartDate(event.target.value)} /></label>
             <label>To<input type="date" value={analyticsEndDate} onChange={(event) => setAnalyticsEndDate(event.target.value)} /></label>

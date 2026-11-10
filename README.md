@@ -152,7 +152,9 @@ existing entrance QR and daily 4-digit access verification. Class attendance is
 a separate record and is only marked by an authorized admin.
 Absences are not automatic: an admin may mark a student absent after the class
 end time, or mark attendance present. Campus-entry reports and class attendance
-reports remain separate.
+reports remain separate. The authorized class attendance roster includes each
+registrant's date of birth and supports CSV export; this personal information
+is available only through the authenticated admin reporting API.
 
 Admins manage academic terms and recurring weekly classes from
 `/admin/classes`. A class includes its day, time, room, capacity, and optional

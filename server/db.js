@@ -2084,6 +2084,7 @@ export async function listClassBookings({ campus, classId, classDate, studentId,
       params.push(bookingId);
     }
     rows = sqlite.prepare(`SELECT b.*, c.campus, s.name AS student_name, s.phone AS student_phone,
+      s.date_of_birth AS student_date_of_birth,
       s.sms_opt_out AS student_sms_opt_out
       FROM class_bookings b
       JOIN class_schedules c ON c.id = b.class_id
@@ -2097,7 +2098,7 @@ export async function listClassBookings({ campus, classId, classDate, studentId,
   const studentIds = [...new Set(rows.map((row) => row.student_id))];
   if (supabase) {
     const [studentsResult, attendanceResult, notificationsResult] = await Promise.all([
-      supabase.from('students').select('id,name,phone,sms_opt_out').in('id', studentIds),
+      supabase.from('students').select('id,name,phone,date_of_birth,sms_opt_out').in('id', studentIds),
       supabase.from('class_attendance').select('*').in('booking_id', bookingIds),
       supabase.from('class_notifications').select('*').in('booking_id', bookingIds).order('created_at', { ascending: false })
     ]);
@@ -2117,6 +2118,7 @@ export async function listClassBookings({ campus, classId, classDate, studentId,
       ...(students.get(row.student_id) ? {
         student_name: students.get(row.student_id).name,
         student_phone: students.get(row.student_id).phone,
+        student_date_of_birth: students.get(row.student_id).date_of_birth || null,
         student_sms_opt_out: Boolean(students.get(row.student_id).sms_opt_out)
       } : {}),
       attendance: attendance.get(row.id) || null,
